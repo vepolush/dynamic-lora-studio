@@ -61,24 +61,26 @@ def _render_entities_section() -> None:
 
         active_entity = _get_active_entity()
         if active_entity:
+            versions = active_entity.get("versions", ["v1"])
+            image_count = active_entity.get("image_count", 0)
             st.markdown(
                 f'<div class="entity-detail">'
-                f'<div class="entity-detail-name">{active_entity["name"]}</div>'
-                f'<div class="entity-detail-trigger">{active_entity["trigger_word"]}</div>'
+                f'<div class="entity-detail-name">{active_entity.get("name", "")}</div>'
+                f'<div class="entity-detail-trigger">{active_entity.get("trigger_word", "")}</div>'
                 f'<div class="entity-detail-meta">'
-                f'{active_entity["image_count"]} images · '
-                f'{len(active_entity["versions"])} version(s)'
+                f'{image_count} images · '
+                f'{len(versions)} version(s)'
                 f"</div></div>",
                 unsafe_allow_html=True,
             )
 
-            if len(active_entity["versions"]) > 1:
+            if len(versions) > 1:
+                active_ver = active_entity.get("active_version", versions[0])
+                idx = versions.index(active_ver) if active_ver in versions else 0
                 st.selectbox(
                     "Version",
-                    active_entity["versions"],
-                    index=active_entity["versions"].index(
-                        active_entity["active_version"]
-                    ),
+                    versions,
+                    index=idx,
                     key="entity_version_select",
                 )
 
@@ -152,12 +154,35 @@ def _render_entity_form() -> None:
     col_train, col_cancel = st.columns(2, gap="small")
     with col_train:
         st.markdown('<div class="generate-btn">', unsafe_allow_html=True)
-        st.button("Upload & Train", key="upload_train_btn", use_container_width=True)
+        if st.button("Upload & Train", key="upload_train_btn", use_container_width=True):
+            _handle_entity_upload()
         st.markdown("</div>", unsafe_allow_html=True)
     with col_cancel:
         if st.button("Cancel", key="cancel_entity_form", use_container_width=True):
             st.session_state["show_entity_form"] = False
             st.rerun()
+
+
+def _handle_entity_upload() -> None:
+    from services.entity_service import upload_entity
+
+    name = st.session_state.get("new_entity_name", "").strip()
+    trigger = st.session_state.get("new_entity_trigger", "").strip()
+    zip_file = st.session_state.get("entity_zip_upload")
+    if not name or not trigger:
+        st.error("Name and trigger word required")
+    elif not zip_file:
+        st.error("Upload a ZIP file")
+    else:
+        zip_bytes = zip_file.read()
+        entity = upload_entity(name, trigger, zip_bytes, zip_file.name)
+        if entity:
+            st.session_state["entities"] = st.session_state.get("entities", []) + [entity]
+            st.session_state["show_entity_form"] = False
+            st.toast("Entity uploaded & training started")
+            st.rerun()
+        else:
+            st.error("Upload failed. Check backend in Settings.")
 
 
 # ---------------------------------------------------------------------------

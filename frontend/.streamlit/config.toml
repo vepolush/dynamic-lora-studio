@@ -1,9 +1,18 @@
 [theme]
+base = "dark"
 primaryColor = "#7C3AED"
 backgroundColor = "#0E0E12"
 secondaryBackgroundColor = "#1A1A2E"
 textColor = "#E0E0E0"
 font = "sans serif"
+
+[theme.sidebar]
+backgroundColor = "#0E0E12"
+secondaryBackgroundColor = "#1A1A2E"
+textColor = "#E0E0E0"
+widgetBackgroundColor = "#1A1A2E"
+widgetBorderColor = "rgba(255,255,255,0.1)"
+skeletonBackgroundColor = "#1A1A2E"
 
 [server]
 headless = true

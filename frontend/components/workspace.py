@@ -70,7 +70,36 @@ def _render_image_grid(session: dict) -> None:
 
 
 def _render_prompt_input() -> None:
+    from services.generation_service import generate
+
     prompt = st.chat_input("Describe the image you want to generate")
     if prompt:
-        st.session_state["last_prompt"] = prompt
-        st.toast(f"Prompt received: {prompt[:60]}...")
+        session = get_active_session()
+        if not session:
+            st.error("No active session.")
+            return
+
+        settings = st.session_state.get("generation_settings", {})
+        size = settings.get("image_size", "512x512")
+        w, h = (int(x) for x in size.split("x"))
+
+        result = generate(
+            session_id=session["id"],
+            prompt=prompt,
+            steps=settings.get("steps", 25),
+            guidance_scale=settings.get("guidance_scale", 7.5),
+            width=w,
+            height=h,
+            seed=settings.get("seed", -1),
+            entity_id=st.session_state.get("active_entity_id"),
+            lora_strength=st.session_state.get("lora_strength", 0.8),
+            style=settings.get("style"),
+            lightning=settings.get("lightning"),
+            color=settings.get("color"),
+        )
+        if result:
+            st.session_state["last_prompt"] = prompt
+            st.toast("Generation started.")
+            st.rerun()
+        else:
+            st.error("Backend unavailable. Check Settings.")

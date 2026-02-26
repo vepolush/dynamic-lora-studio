@@ -6,7 +6,6 @@
     display: none;
 }
 
-/* Toolbar: hide contents but keep expand-sidebar button visible */
 [data-testid="stToolbar"] [data-testid="stToolbarActions"] {
     visibility: hidden;
     width: 0;
@@ -85,7 +84,6 @@ header[data-testid="stHeader"] {
     z-index: 0;
 }
 
-/* Main content stretches when sidebar is collapsed */
 [data-testid="stMain"] {
     flex: 1 1 auto;
     max-width: 100%;
@@ -109,13 +107,24 @@ header[data-testid="stHeader"] {
     width: 220px;
 }
 
-[data-testid="stSidebar"] > div:first-child {
-    padding: 0.6rem 0.65rem 0.5rem;
+/* Hide sidebar scrollbar */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 
-/* Default gap in sidebar — small breathing room between sections */
+[data-testid="stSidebar"]::-webkit-scrollbar,
+[data-testid="stSidebar"] > div::-webkit-scrollbar {
+    display: none;
+}
+
+[data-testid="stSidebar"] > div:first-child {
+    padding: 0.35rem 0.65rem 0.5rem;
+}
+
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-    gap: 0.25rem;
+    gap: 0.1rem;
 }
 
 .nav-btn + .nav-btn,
@@ -149,7 +158,6 @@ header[data-testid="stHeader"] {
     box-shadow: none;
 }
 
-/* Nav button — glow line on the button's top edge */
 .nav-btn {
     position: relative;
 }
@@ -189,7 +197,7 @@ header[data-testid="stHeader"] {
     font-size: 1rem;
     font-weight: 700;
     color: var(--text-primary);
-    padding: 0.2rem 0 0.5rem 0.2rem;
+    padding: 0.1rem 0 0.75rem 0.2rem;
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -209,7 +217,7 @@ header[data-testid="stHeader"] {
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--text-muted);
-    padding: 0.45rem 0 0.1rem 0.3rem;
+    padding: 0.45rem 0 0.35rem 0.3rem;
 }
 
 /* Session / category items */
@@ -217,12 +225,36 @@ header[data-testid="stHeader"] {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.3rem 0.6rem;
+    padding: 0.35rem 0.6rem;
+    margin-bottom: 0.5rem;
     border-radius: var(--radius-xs);
     cursor: pointer;
     transition: all 0.15s ease;
     color: var(--text-secondary);
     font-size: 0.78rem;
+}
+
+/* Recent session buttons */
+[data-testid="stSidebar"] [class*="session_btn"] button {
+    font-size: 0.78rem !important;
+    padding: 0.35rem 0.6rem !important;
+    min-height: unset !important;
+    height: auto !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+}
+[data-testid="stSidebar"] [class*="session_btn"] button p {
+    font-size: 0.78rem !important;
+    margin: 0 !important;
+    line-height: inherit !important;
+    text-align: left !important;
+}
+[data-testid="stSidebar"] [class*="session_btn"] button > div,
+[data-testid="stSidebar"] [class*="session_btn"] button span,
+[data-testid="stSidebar"] [class*="session_btn"] button span > div {
+    justify-content: flex-start !important;
+    text-align: left !important;
+    width: 100% !important;
 }
 
 .session-item:hover {
@@ -242,7 +274,6 @@ header[data-testid="stHeader"] {
 .custom-divider {
     border: none;
     border-top: 1px solid var(--border);
-    margin: 0.35rem 0;
 }
 
 /* New chat button */
@@ -371,7 +402,7 @@ header[data-testid="stHeader"] {
     margin-top: 0.25rem;
 }
 
-/* Image grid — fixed card sizes */
+/* Image grid */
 .image-grid-wrapper {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -631,7 +662,7 @@ header[data-testid="stHeader"] {
     animation: activePulse 3s ease-in-out infinite;
 }
 
-/* Add-new tile — prevent overflow */
+/* Add-new tile */
 .entity-tile-add {
     min-width: 0;
     max-width: 100%;
@@ -659,7 +690,6 @@ header[data-testid="stHeader"] {
     background: rgba(124, 58, 237, 0.05);
 }
 
-/* Overflow protection for entity grid columns */
 [data-testid="stExpander"] [data-testid="stHorizontalBlock"] > div {
     min-width: 0;
     overflow: hidden;
