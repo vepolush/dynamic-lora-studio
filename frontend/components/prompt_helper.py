@@ -175,7 +175,8 @@ def _handle_entity_upload() -> None:
         st.error("Upload a ZIP file")
     else:
         zip_bytes = zip_file.read()
-        entity = upload_entity(name, trigger, zip_bytes, zip_file.name)
+        with st.spinner("Uploading & training..."):
+            entity = upload_entity(name, trigger, zip_bytes, zip_file.name)
         if entity:
             st.session_state["entities"] = st.session_state.get("entities", []) + [entity]
             st.session_state["show_entity_form"] = False

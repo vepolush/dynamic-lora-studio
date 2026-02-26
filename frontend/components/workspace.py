@@ -83,20 +83,21 @@ def _render_prompt_input() -> None:
         size = settings.get("image_size", "512x512")
         w, h = (int(x) for x in size.split("x"))
 
-        result = generate(
-            session_id=session["id"],
-            prompt=prompt,
-            steps=settings.get("steps", 25),
-            guidance_scale=settings.get("guidance_scale", 7.5),
-            width=w,
-            height=h,
-            seed=settings.get("seed", -1),
-            entity_id=st.session_state.get("active_entity_id"),
-            lora_strength=st.session_state.get("lora_strength", 0.8),
-            style=settings.get("style"),
-            lightning=settings.get("lightning"),
-            color=settings.get("color"),
-        )
+        with st.spinner("Generating image..."):
+            result = generate(
+                session_id=session["id"],
+                prompt=prompt,
+                steps=settings.get("steps", 25),
+                guidance_scale=settings.get("guidance_scale", 7.5),
+                width=w,
+                height=h,
+                seed=settings.get("seed", -1),
+                entity_id=st.session_state.get("active_entity_id"),
+                lora_strength=st.session_state.get("lora_strength", 0.8),
+                style=settings.get("style"),
+                lightning=settings.get("lightning"),
+                color=settings.get("color"),
+            )
         if result:
             st.session_state["last_prompt"] = prompt
             st.toast("Generation started.")

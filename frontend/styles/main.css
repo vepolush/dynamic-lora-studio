@@ -95,6 +95,14 @@ header[data-testid="stHeader"] {
 ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3a5a; }
 
+/* ===== Loading spinner ===== */
+[data-testid="stSpinner"] {
+    color: var(--accent-light);
+}
+[data-testid="stSpinner"] > div {
+    border-color: var(--accent) transparent transparent transparent !important;
+}
+
 
 /* ============================
    SIDEBAR

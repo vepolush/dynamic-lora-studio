@@ -76,12 +76,14 @@ DEFAULT_SETTINGS: dict = {
 
 def init_session_state() -> None:
     """Populate st.session_state with defaults if keys are missing."""
-    if "sessions" not in st.session_state:
-        from services.session_service import get_sessions
-        st.session_state["sessions"] = get_sessions()
-    if "entities" not in st.session_state:
-        from services.entity_service import get_entities
-        st.session_state["entities"] = get_entities()
+    if "sessions" not in st.session_state or "entities" not in st.session_state:
+        with st.spinner("Loading..."):
+            if "sessions" not in st.session_state:
+                from services.session_service import get_sessions
+                st.session_state["sessions"] = get_sessions()
+            if "entities" not in st.session_state:
+                from services.entity_service import get_entities
+                st.session_state["entities"] = get_entities()
 
     sessions = st.session_state["sessions"]
     active_id = sessions[0]["id"] if sessions else None

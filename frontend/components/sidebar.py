@@ -6,7 +6,6 @@ import streamlit as st
 
 from state.session import get_favourite_count
 
-# Material Symbols (Google) — Streamlit native support
 NAV_ITEMS = [
     ("generate", "Generate", ":material/auto_awesome:"),
     ("my_images", "My Images", ":material/photo_library:"),
@@ -77,7 +76,8 @@ def _session_category(label: str, count: int) -> None:
 def _handle_new_chat() -> None:
     from services.session_service import create_session
 
-    new_sess = create_session("New session")
+    with st.spinner("Creating session..."):
+        new_sess = create_session("New session")
     if new_sess:
         st.session_state["sessions"] = [new_sess] + st.session_state.get("sessions", [])
         st.session_state["active_session_id"] = new_sess["id"]
