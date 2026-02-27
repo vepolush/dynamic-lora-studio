@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from api.client import APIClient, BackendError
 from config import BACKEND_ENABLED
 from state.session import MOCK_SESSIONS
+
+
+def _make_local_session(title: str) -> dict[str, Any]:
+    """Create session dict for local/mock mode."""
+    import uuid
+    return {
+        "id": f"sess_{uuid.uuid4().hex[:12]}",
+        "title": title,
+        "created_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        "prompt": "",
+        "helper_specs": "",
+        "images": 0,
+        "favourite": False,
+    }
 
 
 def get_sessions() -> list[dict[str, Any]]:
@@ -22,9 +37,9 @@ def get_sessions() -> list[dict[str, Any]]:
 
 
 def create_session(title: str = "New session") -> dict[str, Any] | None:
-    """Create a new session via backend. Returns None if backend unavailable."""
+    """Create a new session via backend or locally when backend disabled."""
     if not BACKEND_ENABLED:
-        return None
+        return _make_local_session(title)
 
     try:
         client = APIClient()

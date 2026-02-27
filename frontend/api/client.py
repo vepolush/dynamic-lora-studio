@@ -8,8 +8,8 @@ import httpx
 
 from config import BACKEND_URL
 
-DEFAULT_TIMEOUT = 60.0  # Generation can take ~1 min
-QUICK_TIMEOUT = 5.0  # For metadata (sessions, entities) when backend may be down
+DEFAULT_TIMEOUT = 90.0
+QUICK_TIMEOUT = 5.0
 
 
 class BackendError(Exception):

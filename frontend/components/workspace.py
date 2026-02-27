@@ -8,6 +8,22 @@ import streamlit as st
 
 from state.session import format_session_date, get_active_session
 
+
+def _render_no_session() -> None:
+    """Show create-session prompt when no sessions exist."""
+    if st.button("＋ New Session", key="workspace_new_session", type="primary"):
+        from services.session_service import create_session
+
+        with st.spinner("Creating session..."):
+            new_sess = create_session("New session")
+        if new_sess:
+            st.session_state["sessions"] = [new_sess] + st.session_state.get("sessions", [])
+            st.session_state["active_session_id"] = new_sess["id"]
+            st.toast("Session created")
+            st.rerun()
+        else:
+            st.error("Could not create session. Check backend in Settings.")
+
 _STARS_HTML = "".join(
     f'<div class="star" style="left:{random.randint(0,100)}%;top:{random.randint(0,100)}%;--dur:{random.uniform(2,6):.1f}s"></div>'
     for _ in range(40)
@@ -29,7 +45,7 @@ def render_workspace() -> None:
 
     session = get_active_session()
     if session is None:
-        st.info("Select or create a session to start generating.")
+        _render_no_session()
         return
 
     _render_session_header(session)
