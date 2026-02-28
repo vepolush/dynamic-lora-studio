@@ -1,4 +1,4 @@
-"""Session state initialization and mock data for the UI prototype."""
+"""Session state initialization and helpers."""
 
 from __future__ import annotations
 
@@ -11,30 +11,21 @@ MOCK_SESSIONS: list[dict] = [
         "id": "sess_001",
         "title": "3D sphere",
         "created_at": "2026-02-26T12:00:00",
-        "prompt": (
-            "a high-texture pearl 3D sphere glowing softly in pastel purple, "
-            "orange, and blue colors against a solid black background"
-        ),
-        "helper_specs": "::3 glowing::5 pearl::3 foil::3 --v 6.0",
-        "images": 4,
+        "message_count": 2,
         "favourite": False,
     },
     {
         "id": "sess_002",
         "title": "Portrait study",
         "created_at": "2026-02-25T18:30:00",
-        "prompt": "cinematic portrait of a woman in neon lighting, cyberpunk style",
-        "helper_specs": "::2 neon::4 cinematic::3 --v 6.0",
-        "images": 2,
+        "message_count": 1,
         "favourite": True,
     },
     {
         "id": "sess_003",
         "title": "Landscape",
         "created_at": "2026-02-24T09:15:00",
-        "prompt": "vast alien landscape with crystal formations, purple sky, dramatic lighting",
-        "helper_specs": "::3 crystal::4 dramatic::3 --v 6.0",
-        "images": 4,
+        "message_count": 3,
         "favourite": True,
     },
 ]
@@ -63,7 +54,7 @@ MOCK_ENTITIES: list[dict] = [
 ]
 
 DEFAULT_SETTINGS: dict = {
-    "steps": 25,
+    "steps": 0,
     "guidance_scale": 7.5,
     "image_size": "512x512",
     "seed": -1,
@@ -71,6 +62,29 @@ DEFAULT_SETTINGS: dict = {
     "style": "None",
     "lightning": "None",
     "color": "Default",
+    "scheduler": "Auto",
+    "num_images": 1,
+    "negative_prompt": "",
+}
+
+SCHEDULERS = [
+    "Auto",
+    "DPM++ 2M Karras",
+    "DPM++ 2M SDE Karras",
+    "Euler",
+    "Euler a",
+    "DDIM",
+    "PNDM",
+]
+
+SCHEDULER_MAP: dict[str, str] = {
+    "Auto": "",
+    "DPM++ 2M Karras": "dpm++_2m_karras",
+    "DPM++ 2M SDE Karras": "dpm++_2m_sde_karras",
+    "Euler": "euler",
+    "Euler a": "euler_a",
+    "DDIM": "ddim",
+    "PNDM": "pndm",
 }
 
 
@@ -101,6 +115,7 @@ def init_session_state() -> None:
         "active_entity_id": None,
         "lora_strength": 0.8,
         "show_entity_form": False,
+        "chat_messages": {},
     }
 
     for key, value in defaults.items():
@@ -116,20 +131,32 @@ def get_active_session() -> dict | None:
     return None
 
 
-def update_active_session(prompt: str = "", helper_specs: str = "", images_delta: int = 0) -> None:
-    """Update active session locally (prompt, helper_specs, images count)."""
-    sid = st.session_state.get("active_session_id")
-    if not sid:
-        return
-    for s in st.session_state.get("sessions", []):
-        if s["id"] == sid:
-            if prompt:
-                s["prompt"] = prompt
-            if helper_specs:
-                s["helper_specs"] = helper_specs
-            if images_delta:
-                s["images"] = s.get("images", 0) + images_delta
-            break
+def get_session_messages(session_id: str) -> list[dict]:
+    """Get messages for a session from local state, loading from backend if needed."""
+    chat_messages = st.session_state.get("chat_messages", {})
+    if session_id in chat_messages:
+        return chat_messages[session_id]
+
+    from services.session_service import get_session
+    session_data = get_session(session_id)
+    if session_data and "messages" in session_data:
+        msgs = session_data["messages"]
+        chat_messages[session_id] = msgs
+        st.session_state["chat_messages"] = chat_messages
+        return msgs
+
+    chat_messages[session_id] = []
+    st.session_state["chat_messages"] = chat_messages
+    return []
+
+
+def add_chat_message(session_id: str, message: dict) -> None:
+    """Add a message to the local chat history for a session."""
+    chat_messages = st.session_state.get("chat_messages", {})
+    if session_id not in chat_messages:
+        chat_messages[session_id] = []
+    chat_messages[session_id].append(message)
+    st.session_state["chat_messages"] = chat_messages
 
 
 def get_favourite_count() -> int:

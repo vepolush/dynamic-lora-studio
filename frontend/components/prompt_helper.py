@@ -97,10 +97,9 @@ def _render_entities_section() -> None:
 
 
 def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
-    """Render entity tiles as a grid of real st.button elements."""
     n_entities = len(entities)
     cols_per_row = 3
-    total_slots = n_entities + 1  # +1 for "Add new"
+    total_slots = n_entities + 1
     rows = (total_slots + cols_per_row - 1) // cols_per_row
 
     slot = 0
@@ -190,19 +189,30 @@ def _handle_entity_upload() -> None:
 # ---------------------------------------------------------------------------
 
 def _render_technical_section() -> None:
+    from state.session import SCHEDULERS
+
     with st.expander("Technical", expanded=True):
         settings = st.session_state.get("generation_settings", {})
 
-        st.slider(
-            "Steps",
-            min_value=10,
-            max_value=50,
-            value=settings.get("steps", 25),
-            key="steps_slider",
+        st.text_area(
+            "Negative Prompt",
+            value=settings.get("negative_prompt", ""),
+            key="negative_prompt_input",
+            height=68,
+            placeholder="Things to avoid in the image (optional)",
         )
 
         st.slider(
-            "Guidance Scale",
+            "Steps",
+            min_value=0,
+            max_value=50,
+            value=settings.get("steps", 0),
+            key="steps_slider",
+            help="0 = auto (quality preset determines steps)",
+        )
+
+        st.slider(
+            "Guidance Scale (CFG)",
             min_value=1.0,
             max_value=20.0,
             value=settings.get("guidance_scale", 7.5),
@@ -217,13 +227,32 @@ def _render_technical_section() -> None:
             key="size_select",
         )
 
-        st.number_input(
-            "Seed",
-            min_value=-1,
-            max_value=999999,
-            value=settings.get("seed", -1),
-            key="seed_input",
-            help="-1 for random seed",
+        col_seed, col_nimgs = st.columns(2, gap="small")
+        with col_seed:
+            st.number_input(
+                "Seed",
+                min_value=-1,
+                max_value=999999999,
+                value=settings.get("seed", -1),
+                key="seed_input",
+                help="-1 for random",
+            )
+        with col_nimgs:
+            st.number_input(
+                "Images",
+                min_value=1,
+                max_value=4,
+                value=settings.get("num_images", 1),
+                key="num_images_input",
+                help="1–4 images per generation",
+            )
+
+        st.selectbox(
+            "Scheduler",
+            SCHEDULERS,
+            index=SCHEDULERS.index(settings.get("scheduler", "Auto")),
+            key="scheduler_select",
+            help="Auto = quality preset picks the best scheduler",
         )
 
         st.select_slider(
@@ -250,7 +279,7 @@ def _render_styling_section() -> None:
         )
 
         st.selectbox(
-            "Lightning",
+            "Lighting",
             LIGHTINGS,
             index=LIGHTINGS.index(settings.get("lightning", "None")),
             key="lightning_select",
@@ -269,7 +298,6 @@ def _render_styling_section() -> None:
 # ---------------------------------------------------------------------------
 
 def _reset_prompt_helper() -> None:
-    """Reset Prompt Helper to defaults."""
     from state.session import DEFAULT_SETTINGS
     st.session_state["generation_settings"] = {**DEFAULT_SETTINGS}
     st.session_state["active_entity_id"] = None
@@ -278,10 +306,19 @@ def _reset_prompt_helper() -> None:
 
 
 def get_current_settings() -> dict:
-    """Get current generation settings from widget values or generation_settings."""
+    """Get current generation settings from widget values."""
+    from state.session import SCHEDULER_MAP
     gs = st.session_state.get("generation_settings", {})
-    defaults = {"steps": 25, "guidance_scale": 7.5, "image_size": "512x512", "seed": -1,
-                "quality": "Normal", "style": "None", "lightning": "None", "color": "Default"}
+    defaults = {
+        "steps": 0, "guidance_scale": 7.5, "image_size": "512x512",
+        "seed": -1, "quality": "Normal", "style": "None", "lightning": "None",
+        "color": "Default", "scheduler": "Auto", "num_images": 1,
+        "negative_prompt": "",
+    }
+
+    scheduler_name = st.session_state.get("scheduler_select", gs.get("scheduler", defaults["scheduler"]))
+    scheduler_key = SCHEDULER_MAP.get(scheduler_name, "")
+
     return {
         "steps": st.session_state.get("steps_slider", gs.get("steps", defaults["steps"])),
         "guidance_scale": st.session_state.get("guidance_slider", gs.get("guidance_scale", defaults["guidance_scale"])),
@@ -291,11 +328,14 @@ def get_current_settings() -> dict:
         "style": st.session_state.get("style_select", gs.get("style", defaults["style"])),
         "lightning": st.session_state.get("lightning_select", gs.get("lightning", defaults["lightning"])),
         "color": st.session_state.get("color_select", gs.get("color", defaults["color"])),
+        "scheduler": scheduler_key or None,
+        "num_images": st.session_state.get("num_images_input", gs.get("num_images", defaults["num_images"])),
+        "negative_prompt": st.session_state.get("negative_prompt_input", gs.get("negative_prompt", defaults["negative_prompt"])),
     }
 
 
 def build_helper_specs() -> str:
-    """Build helper specs string from current settings."""
+    """Build helper specs summary string from current settings."""
     settings = get_current_settings()
     parts = []
     if settings.get("style") and settings["style"] != "None":
@@ -307,9 +347,10 @@ def build_helper_specs() -> str:
     entity = _get_active_entity()
     if entity:
         parts.append(f"entity={entity.get('trigger_word', '')}")
-    if parts:
-        return ", ".join(parts)
-    return ""
+    q = settings.get("quality", "Normal")
+    if q != "Normal":
+        parts.append(f"quality={q}")
+    return ", ".join(parts) if parts else ""
 
 
 def build_effective_prompt(user_prompt: str) -> str:
