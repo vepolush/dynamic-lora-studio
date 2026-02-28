@@ -43,9 +43,8 @@ def render_prompt_helper() -> None:
     _render_technical_section()
     _render_styling_section()
 
-    st.markdown('<div class="apply-btn">', unsafe_allow_html=True)
-    st.button("Apply to Prompt", key="apply_to_prompt", use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    if st.button("Reset", key="prompt_helper_reset", use_container_width=True):
+        _reset_prompt_helper()
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +267,62 @@ def _render_styling_section() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _reset_prompt_helper() -> None:
+    """Reset Prompt Helper to defaults."""
+    from state.session import DEFAULT_SETTINGS
+    st.session_state["generation_settings"] = {**DEFAULT_SETTINGS}
+    st.session_state["active_entity_id"] = None
+    st.session_state["lora_strength"] = 0.8
+    st.rerun()
+
+
+def get_current_settings() -> dict:
+    """Get current generation settings from widget values or generation_settings."""
+    gs = st.session_state.get("generation_settings", {})
+    defaults = {"steps": 25, "guidance_scale": 7.5, "image_size": "512x512", "seed": -1,
+                "quality": "Normal", "style": "None", "lightning": "None", "color": "Default"}
+    return {
+        "steps": st.session_state.get("steps_slider", gs.get("steps", defaults["steps"])),
+        "guidance_scale": st.session_state.get("guidance_slider", gs.get("guidance_scale", defaults["guidance_scale"])),
+        "image_size": st.session_state.get("size_select", gs.get("image_size", defaults["image_size"])),
+        "seed": st.session_state.get("seed_input", gs.get("seed", defaults["seed"])),
+        "quality": st.session_state.get("quality_slider", gs.get("quality", defaults["quality"])),
+        "style": st.session_state.get("style_select", gs.get("style", defaults["style"])),
+        "lightning": st.session_state.get("lightning_select", gs.get("lightning", defaults["lightning"])),
+        "color": st.session_state.get("color_select", gs.get("color", defaults["color"])),
+    }
+
+
+def build_helper_specs() -> str:
+    """Build helper specs string from current settings."""
+    settings = get_current_settings()
+    parts = []
+    if settings.get("style") and settings["style"] != "None":
+        parts.append(f"style={settings['style']}")
+    if settings.get("lightning") and settings["lightning"] != "None":
+        parts.append(f"lighting={settings['lightning']}")
+    if settings.get("color") and settings["color"] != "Default":
+        parts.append(f"color={settings['color']}")
+    entity = _get_active_entity()
+    if entity:
+        parts.append(f"entity={entity.get('trigger_word', '')}")
+    if parts:
+        return ", ".join(parts)
+    return ""
+
+
+def build_effective_prompt(user_prompt: str) -> str:
+    """Build prompt with entity trigger prefix if active."""
+    entity = _get_active_entity()
+    if entity:
+        trigger = entity.get("trigger_word", "")
+        if trigger and user_prompt.strip():
+            return f"{trigger} {user_prompt.strip()}"
+        if trigger:
+            return trigger
+    return user_prompt.strip()
+
 
 def _get_active_entity() -> dict | None:
     active_id = st.session_state.get("active_entity_id")

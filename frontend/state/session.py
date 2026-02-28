@@ -86,6 +86,12 @@ def init_session_state() -> None:
                 st.session_state["entities"] = get_entities()
 
     sessions = st.session_state["sessions"]
+    if not sessions:
+        from services.session_service import create_session
+        new_sess = create_session("New session")
+        if new_sess:
+            st.session_state["sessions"] = [new_sess]
+            sessions = [new_sess]
     active_id = sessions[0]["id"] if sessions else None
 
     defaults = {
@@ -108,6 +114,22 @@ def get_active_session() -> dict | None:
         if s["id"] == st.session_state.get("active_session_id"):
             return s
     return None
+
+
+def update_active_session(prompt: str = "", helper_specs: str = "", images_delta: int = 0) -> None:
+    """Update active session locally (prompt, helper_specs, images count)."""
+    sid = st.session_state.get("active_session_id")
+    if not sid:
+        return
+    for s in st.session_state.get("sessions", []):
+        if s["id"] == sid:
+            if prompt:
+                s["prompt"] = prompt
+            if helper_specs:
+                s["helper_specs"] = helper_specs
+            if images_delta:
+                s["images"] = s.get("images", 0) + images_delta
+            break
 
 
 def get_favourite_count() -> int:

@@ -6,14 +6,14 @@ import random
 
 import streamlit as st
 
-from state.session import format_session_date, get_active_session
+from state.session import format_session_date, get_active_session, update_active_session
 
 
 def _render_no_session() -> None:
-    """Show create-session prompt when no sessions exist."""
+    """Fallback when auto-create failed."""
+    st.info("No sessions. Creating one...")
     if st.button("＋ New Session", key="workspace_new_session", type="primary"):
         from services.session_service import create_session
-
         with st.spinner("Creating session..."):
             new_sess = create_session("New session")
         if new_sess:
@@ -49,7 +49,8 @@ def render_workspace() -> None:
         return
 
     _render_session_header(session)
-    _render_prompt_info(session)
+    if session.get("prompt") or session.get("helper_specs"):
+        _render_prompt_info(session)
     _render_image_grid(session)
     _render_prompt_input()
 
@@ -65,6 +66,9 @@ def _render_session_header(session: dict) -> None:
 
 
 def _render_prompt_info(session: dict) -> None:
+    prompt = session.get("prompt", "")
+    helper_specs = session.get("helper_specs", "")
+    helper_line = f'<div class="helper-specs">Helper specs: {helper_specs}</div>' if helper_specs else ""
     st.markdown(
         f'<div class="prompt-info">'
         f'<div class="bot-label">'
@@ -72,8 +76,8 @@ def _render_prompt_info(session: dict) -> None:
         f'<span class="bot-badge">BOT</span> '
         f"{format_session_date(session['created_at'])}"
         f"</div>"
-        f'<div class="prompt-text">Prompt: {session["prompt"]}</div>'
-        f'<div class="helper-specs">Helper specs applied: {session["helper_specs"]}</div>'
+        f'<div class="prompt-text">Prompt: {prompt}</div>'
+        f"{helper_line}"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -87,6 +91,11 @@ def _render_image_grid(session: dict) -> None:
 
 def _render_prompt_input() -> None:
     from services.generation_service import generate
+    from components.prompt_helper import (
+        get_current_settings,
+        build_helper_specs,
+        build_effective_prompt,
+    )
 
     prompt = st.chat_input("Describe the image you want to generate")
     if prompt:
@@ -95,14 +104,16 @@ def _render_prompt_input() -> None:
             st.error("No active session.")
             return
 
-        settings = st.session_state.get("generation_settings", {})
+        settings = get_current_settings()
         size = settings.get("image_size", "512x512")
         w, h = (int(x) for x in size.split("x"))
+        effective_prompt = build_effective_prompt(prompt)
+        helper_specs = build_helper_specs()
 
         with st.spinner("Generating image..."):
             result = generate(
                 session_id=session["id"],
-                prompt=prompt,
+                prompt=effective_prompt,
                 steps=settings.get("steps", 25),
                 guidance_scale=settings.get("guidance_scale", 7.5),
                 width=w,
@@ -115,7 +126,7 @@ def _render_prompt_input() -> None:
                 color=settings.get("color"),
             )
         if result:
-            st.session_state["last_prompt"] = prompt
+            update_active_session(prompt=effective_prompt, helper_specs=helper_specs, images_delta=1)
             st.toast("Generation started.")
             st.rerun()
         else:
