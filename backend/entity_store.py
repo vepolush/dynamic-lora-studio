@@ -73,6 +73,8 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
         "name": str(metadata.get("name", "")),
         "trigger_word": str(metadata.get("trigger_word", "")),
         "status": str(metadata.get("status", "queued")),
+        "error": metadata.get("error"),
+        "training_job_id": metadata.get("training_job_id"),
         "versions": versions,
         "active_version": active_version,
         "preview_url": metadata.get("preview_url"),

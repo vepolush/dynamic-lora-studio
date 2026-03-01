@@ -38,15 +38,18 @@ from session_store import (
     save_image,
     update_session as store_update_session,
 )
+from training_queue import training_queue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    training_queue.start()
     try:
         ml_manager.load_model()
     except Exception as e:
         print(f"Model loading error: {e}")
     yield
+    training_queue.stop()
     print("Server shutting down...")
 
 
@@ -347,7 +350,27 @@ def upload_entity(
                 "image_count": int(manifest.get("image_count", 0)),
             },
         )
-        return updated_entity or entity
+        queue_info = training_queue.enqueue(
+            entity_id=entity_id,
+            trigger_word=clean_trigger,
+            steps=500,
+            rank=8,
+        )
+
+        started_entity = update_entity_metadata(
+            entity_id,
+            {
+                "status": "queued",
+                "training_job_id": queue_info["job_id"],
+                "error": None,
+            },
+        )
+        response_entity = started_entity or updated_entity or entity
+        return {
+            "status": "training_started",
+            "job_id": queue_info["job_id"],
+            "entity": response_entity,
+        }
     except HTTPException:
         raise
     except Exception as e:

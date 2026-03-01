@@ -103,12 +103,21 @@ class APIClient:
         filename: str = "images.zip",
     ) -> dict[str, Any]:
         files = {"file": (filename, zip_bytes, "application/zip")}
-        return self._request(
+        data = self._request(
             "POST",
             "/api/entities",
             data={"name": name, "trigger_word": trigger_word},
             files=files,
         )  # type: ignore
+        if isinstance(data, dict):
+            entity = data.get("entity")
+            if isinstance(entity, dict):
+                if "status" in data:
+                    entity["_upload_status"] = data["status"]
+                if "job_id" in data:
+                    entity["_training_job_id"] = data["job_id"]
+                return entity
+        return data  # type: ignore
 
     def delete_entity(self, entity_id: str) -> None:
         self._request("DELETE", f"/api/entities/{entity_id}")
