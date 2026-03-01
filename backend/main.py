@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from entity_store import DATA_DIR, create_entity, get_entity as store_get_entity, list_entities as store_list_entities
 from model_manager import ml_manager
 from prompt_builder import (
     build_enhanced_prompt,
@@ -241,4 +242,63 @@ def generate_image(req: GenerateRequest):
 
 @app.get("/api/entities")
 def get_entities():
-    return {"entities": []}
+    return {"entities": store_list_entities()}
+
+
+@app.get("/api/entities/{entity_id}")
+def get_entity(entity_id: str):
+    entity = store_get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return entity
+
+
+@app.post("/api/entities")
+def upload_entity(
+    name: str = Form(...),
+    trigger_word: str = Form(...),
+    file: UploadFile = File(...),
+):
+    clean_name = name.strip()
+    clean_trigger = trigger_word.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Field 'name' is required")
+    if not clean_trigger:
+        raise HTTPException(status_code=400, detail="Field 'trigger_word' is required")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="ZIP file is required")
+
+    allowed_content_types = {
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/octet-stream",
+    }
+    filename_lower = file.filename.lower()
+    is_zip_by_name = filename_lower.endswith(".zip")
+    if file.content_type not in allowed_content_types and not is_zip_by_name:
+        raise HTTPException(status_code=400, detail="Only ZIP uploads are supported")
+
+    tmp_dir = Path(DATA_DIR) / "tmp" / "uploads"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = tmp_dir / f"entity_upload_{new_message_id()}.zip"
+    try:
+        file_bytes = file.file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded ZIP is empty")
+        with open(tmp_path, "wb") as f:
+            f.write(file_bytes)
+
+        entity = create_entity(
+            name=clean_name,
+            trigger_word=clean_trigger,
+            uploaded_filename=file.filename,
+            temp_zip_path=tmp_path,
+        )
+        return entity
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload entity: {e}") from e
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
