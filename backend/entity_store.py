@@ -110,6 +110,30 @@ def get_entity(entity_id: str) -> dict[str, Any] | None:
     return _normalize_entity(metadata)
 
 
+def get_entity_metadata(entity_id: str) -> dict[str, Any] | None:
+    metadata_path = _metadata_path(entity_id)
+    if not metadata_path.exists():
+        return None
+    try:
+        return _read_json(metadata_path)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+
+def update_entity_metadata(entity_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    metadata_path = _metadata_path(entity_id)
+    if not metadata_path.exists():
+        return None
+    try:
+        metadata = _read_json(metadata_path)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+    metadata.update(updates)
+    _write_json(metadata_path, metadata)
+    return _normalize_entity(metadata)
+
+
 def create_entity(
     *,
     name: str,

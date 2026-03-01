@@ -11,7 +11,15 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from entity_store import DATA_DIR, create_entity, get_entity as store_get_entity, list_entities as store_list_entities
+from dataset_prep import DatasetValidationError, prepare_entity_dataset
+from entity_store import (
+    DATA_DIR,
+    create_entity,
+    get_entity as store_get_entity,
+    get_entity_metadata,
+    list_entities as store_list_entities,
+    update_entity_metadata,
+)
 from model_manager import ml_manager
 from prompt_builder import (
     build_enhanced_prompt,
@@ -294,7 +302,52 @@ def upload_entity(
             uploaded_filename=file.filename,
             temp_zip_path=tmp_path,
         )
-        return entity
+        entity_id = str(entity["id"])
+        raw_metadata = get_entity_metadata(entity_id)
+        if raw_metadata is None:
+            raise HTTPException(status_code=500, detail="Failed to read entity metadata")
+
+        uploaded_zip_raw = raw_metadata.get("uploaded_zip_path")
+        if not isinstance(uploaded_zip_raw, str) or not uploaded_zip_raw.strip():
+            update_entity_metadata(entity_id, {"status": "failed", "error": "Missing uploaded ZIP path"})
+            raise HTTPException(status_code=500, detail="Failed to prepare dataset")
+
+        uploaded_zip_path = Path(uploaded_zip_raw)
+        entity_dir = Path(DATA_DIR) / "storage" / "entities" / entity_id
+        try:
+            manifest = prepare_entity_dataset(
+                entity_dir=entity_dir,
+                zip_path=uploaded_zip_path,
+                entity_id=entity_id,
+            )
+        except DatasetValidationError as e:
+            update_entity_metadata(
+                entity_id,
+                {
+                    "status": "failed",
+                    "error": str(e),
+                    "image_count": 0,
+                },
+            )
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            update_entity_metadata(
+                entity_id,
+                {
+                    "status": "failed",
+                    "error": "Dataset preprocessing failed",
+                    "image_count": 0,
+                },
+            )
+            raise HTTPException(status_code=500, detail=f"Failed to prepare dataset: {e}") from e
+
+        updated_entity = update_entity_metadata(
+            entity_id,
+            {
+                "image_count": int(manifest.get("image_count", 0)),
+            },
+        )
+        return updated_entity or entity
     except HTTPException:
         raise
     except Exception as e:
