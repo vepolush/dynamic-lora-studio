@@ -15,6 +15,7 @@ from dataset_prep import DatasetValidationError, prepare_entity_dataset
 from entity_store import (
     DATA_DIR,
     create_entity,
+    load_entity_preview_bytes,
     get_entity as store_get_entity,
     get_entity_metadata,
     list_entities as store_list_entities,
@@ -85,6 +86,7 @@ class GenerateRequest(BaseModel):
     lighting: str | None = None
     color: str | None = None
     entity_id: str | None = None
+    entity_version: str | None = None
     lora_strength: float = 0.8
 
 
@@ -190,6 +192,9 @@ def generate_image(req: GenerateRequest):
             seed=req.seed,
             num_images=min(req.num_images, 4),
             scheduler=scheduler,
+            entity_id=req.entity_id,
+            entity_version=req.entity_version,
+            lora_strength=req.lora_strength,
         )
 
         gen_time = time.time() - start_time
@@ -262,6 +267,14 @@ def get_entity(entity_id: str):
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     return entity
+
+
+@app.get("/api/entities/{entity_id}/preview")
+def get_entity_preview(entity_id: str):
+    data = load_entity_preview_bytes(entity_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Entity preview not found")
+    return Response(content=data, media_type="image/png")
 
 
 @app.post("/api/entities")

@@ -32,6 +32,18 @@ def _metadata_path(entity_id: str) -> Path:
     return _entity_dir(entity_id) / "metadata.json"
 
 
+def entity_dataset_dir(entity_id: str) -> Path:
+    return _entity_dir(entity_id) / "dataset"
+
+
+def entity_weights_dir(entity_id: str) -> Path:
+    return _entity_dir(entity_id) / "weights"
+
+
+def entity_preview_path(entity_id: str) -> Path:
+    return _entity_dir(entity_id) / "preview.png"
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -68,6 +80,10 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
     if active_version and active_version not in versions:
         active_version = None
 
+    preview_url = metadata.get("preview_url")
+    if not preview_url and entity_preview_path(entity_id).exists():
+        preview_url = f"/api/entities/{entity_id}/preview"
+
     return {
         "id": entity_id,
         "name": str(metadata.get("name", "")),
@@ -75,9 +91,10 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
         "status": str(metadata.get("status", "queued")),
         "error": metadata.get("error"),
         "training_job_id": metadata.get("training_job_id"),
+        "preview_error": metadata.get("preview_error"),
         "versions": versions,
         "active_version": active_version,
-        "preview_url": metadata.get("preview_url"),
+        "preview_url": preview_url,
         "created_at": str(metadata.get("created_at", "")),
         "has_lora": bool(versions),
         "image_count": int(metadata.get("image_count", 0)),
@@ -116,6 +133,14 @@ def get_entity_metadata(entity_id: str) -> dict[str, Any] | None:
     metadata_path = _metadata_path(entity_id)
     if not metadata_path.exists():
         return None
+
+
+def load_entity_preview_bytes(entity_id: str) -> bytes | None:
+    path = entity_preview_path(entity_id)
+    if not path.exists():
+        return None
+    with open(path, "rb") as f:
+        return f.read()
     try:
         return _read_json(metadata_path)
     except (json.JSONDecodeError, ValueError, TypeError):

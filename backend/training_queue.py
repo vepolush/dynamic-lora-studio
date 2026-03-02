@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from entity_store import get_entity_metadata, update_entity_metadata
+from entity_store import (
+    entity_preview_path,
+    get_entity_metadata,
+    update_entity_metadata,
+)
 from lora_trainer import train_lora_for_entity
+from model_manager import ml_manager
 
 
 def _utc_now() -> str:
@@ -143,6 +148,16 @@ class TrainingQueueManager:
                 if version not in versions:
                     versions.append(version)
 
+                preview_url = None
+                preview_error = None
+                try:
+                    preview_url = self._generate_entity_preview(
+                        entity_id=job.entity_id,
+                        trigger_word=job.trigger_word,
+                        version=version,
+                    )
+                except Exception as exc:
+                    preview_error = str(exc)
                 finished_at = _utc_now()
                 update_entity_metadata(
                     job.entity_id,
@@ -150,8 +165,10 @@ class TrainingQueueManager:
                         "status": "ready",
                         "versions": versions,
                         "active_version": version,
+                        "preview_url": preview_url,
                         "training_finished_at": finished_at,
                         "training_result": result,
+                        "preview_error": preview_error,
                         "error": None,
                     },
                 )
@@ -169,6 +186,35 @@ class TrainingQueueManager:
                 self._set_job_state(job_id=job.id, status="failed", finished_at=finished_at, error=str(exc))
             finally:
                 self._queue.task_done()
+
+    def _generate_entity_preview(
+        self,
+        *,
+        entity_id: str,
+        trigger_word: str,
+        version: str,
+    ) -> str:
+        prompt = f"studio portrait of {trigger_word}, detailed, clean background"
+        results = ml_manager.generate(
+            prompt=prompt,
+            steps=24,
+            guidance_scale=7.0,
+            width=512,
+            height=512,
+            seed=42,
+            num_images=1,
+            scheduler="dpm++_2m_karras",
+            entity_id=entity_id,
+            entity_version=version,
+            lora_strength=0.9,
+        )
+        if not results:
+            raise RuntimeError("Preview generation returned no images")
+        preview_path = entity_preview_path(entity_id)
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(preview_path, "wb") as f:
+            f.write(results[0]["png_bytes"])
+        return f"/api/entities/{entity_id}/preview"
 
 
 training_queue = TrainingQueueManager()
