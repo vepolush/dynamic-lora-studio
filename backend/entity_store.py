@@ -133,6 +133,10 @@ def get_entity_metadata(entity_id: str) -> dict[str, Any] | None:
     metadata_path = _metadata_path(entity_id)
     if not metadata_path.exists():
         return None
+    try:
+        return _read_json(metadata_path)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
 
 
 def load_entity_preview_bytes(entity_id: str) -> bytes | None:
@@ -141,10 +145,6 @@ def load_entity_preview_bytes(entity_id: str) -> bytes | None:
         return None
     with open(path, "rb") as f:
         return f.read()
-    try:
-        return _read_json(metadata_path)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
 
 
 def update_entity_metadata(entity_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:

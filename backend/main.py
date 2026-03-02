@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -387,6 +388,8 @@ def upload_entity(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Upload entity error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to upload entity: {e}") from e
     finally:
         if tmp_path.exists():

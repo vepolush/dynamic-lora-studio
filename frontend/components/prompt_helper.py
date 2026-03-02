@@ -61,7 +61,7 @@ def _render_entities_section() -> None:
     with st.expander("Entities & LoRA", expanded=True):
         entities = st.session_state.get("entities", [])
         if any(e.get("status") in ("queued", "training") for e in entities):
-            st.autorefresh(interval=5000, key="entities_training_autorefresh")
+            _safe_autorefresh(interval_ms=5000, key="entities_training_autorefresh")
         active_id = st.session_state.get("active_entity_id")
 
         _render_entity_grid(entities, active_id)
@@ -205,13 +205,16 @@ def _handle_entity_upload() -> None:
         zip_bytes = zip_file.read()
         with st.spinner("Uploading & training..."):
             entity = upload_entity(name, trigger, zip_bytes, zip_file.name)
-        if entity:
+        if entity and entity.get("id"):
             st.session_state["entities"] = [entity] + st.session_state.get("entities", [])
             st.session_state["show_entity_form"] = False
             st.toast("Entity uploaded & training started")
             st.rerun()
         else:
-            st.error("Upload failed. Check backend in Settings.")
+            if isinstance(entity, dict) and entity.get("error"):
+                st.error(f"Upload failed: {entity['error']}")
+            else:
+                st.error("Upload failed. Check backend in Settings.")
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +418,7 @@ def _refresh_entities_if_needed() -> None:
         return
 
     latest = get_entities()
-    if latest:
+    if isinstance(latest, list):
         st.session_state["entities"] = latest
         active_id = st.session_state.get("active_entity_id")
         if active_id and not any(e.get("id") == active_id for e in latest):
@@ -429,3 +432,15 @@ def _to_image_src(preview_url: str) -> str | None:
     if preview_url.startswith("http://") or preview_url.startswith("https://"):
         return preview_url
     return f"{BACKEND_URL.rstrip('/')}{preview_url}"
+
+
+def _safe_autorefresh(*, interval_ms: int, key: str) -> None:
+    """Refresh helper compatible with older Streamlit versions."""
+    auto = getattr(st, "autorefresh", None)
+    if callable(auto):
+        auto(interval=interval_ms, key=key)
+        return
+
+    # Fallback: keep page stable and let manual reruns happen.
+    # This avoids crashing on Streamlit versions without st.autorefresh.
+    st.caption("Training in progress... refresh page if status is stale.")

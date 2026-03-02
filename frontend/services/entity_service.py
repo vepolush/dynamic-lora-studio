@@ -39,8 +39,8 @@ def upload_entity(
             zip_bytes=zip_bytes,
             filename=filename,
         )
-    except BackendError:
-        return None
+    except BackendError as e:
+        return {"status": "failed", "error": str(e)}
 
 
 def delete_entity(entity_id: str) -> bool:

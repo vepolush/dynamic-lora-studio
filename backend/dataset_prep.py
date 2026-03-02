@@ -18,6 +18,7 @@ MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
 TARGET_IMAGE_SIZE = (512, 512)
 ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+LANCZOS_RESAMPLE = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
 
 
 class DatasetValidationError(ValueError):
@@ -105,7 +106,7 @@ def prepare_entity_dataset(*, entity_dir: Path, zip_path: Path, entity_id: str) 
                 prepared = ImageOps.fit(
                     image,
                     TARGET_IMAGE_SIZE,
-                    method=Image.Resampling.LANCZOS,
+                    method=LANCZOS_RESAMPLE,
                     centering=(0.5, 0.5),
                 )
                 stem = _safe_stem(Path(member.filename).stem, fallback=f"image_{image_index + 1}")

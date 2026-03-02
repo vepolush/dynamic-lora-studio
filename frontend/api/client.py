@@ -10,6 +10,7 @@ from config import BACKEND_URL
 
 DEFAULT_TIMEOUT = 120.0
 QUICK_TIMEOUT = 5.0
+ENTITY_UPLOAD_TIMEOUT = 120.0
 
 
 class BackendError(Exception):
@@ -108,7 +109,7 @@ class APIClient:
             "/api/entities",
             data={"name": name, "trigger_word": trigger_word},
             files=files,
-            timeout=QUICK_TIMEOUT,
+            timeout=ENTITY_UPLOAD_TIMEOUT,
         )  # type: ignore
         if isinstance(data, dict):
             entity = data.get("entity")
