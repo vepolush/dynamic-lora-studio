@@ -108,6 +108,7 @@ class APIClient:
             "/api/entities",
             data={"name": name, "trigger_word": trigger_word},
             files=files,
+            timeout=QUICK_TIMEOUT,
         )  # type: ignore
         if isinstance(data, dict):
             entity = data.get("entity")
@@ -139,6 +140,7 @@ class APIClient:
         scheduler: str | None = None,
         quality: str = "Normal",
         entity_id: str | None = None,
+        entity_version: str | None = None,
         lora_strength: float = 0.8,
         style: str | None = None,
         lighting: str | None = None,
@@ -162,6 +164,8 @@ class APIClient:
             payload["scheduler"] = scheduler
         if entity_id:
             payload["entity_id"] = entity_id
+        if entity_version:
+            payload["entity_version"] = entity_version
         if style and style != "None":
             payload["style"] = style
         if lighting and lighting != "None":

@@ -18,7 +18,7 @@ def get_entities() -> list[dict[str, Any]]:
         client = APIClient()
         return client.get_entities()
     except BackendError:
-        return MOCK_ENTITIES.copy()
+        return []
 
 
 def upload_entity(

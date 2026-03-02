@@ -718,6 +718,62 @@ header[data-testid="stHeader"] {
 /* ============================
    ENTITY GRID — Streamlit buttons
    ============================ */
+.entity-card,
+.entity-card-active {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem;
+    min-height: 170px;
+}
+
+.entity-card-active {
+    border-color: var(--accent);
+    box-shadow: var(--glow-sm);
+}
+
+.entity-thumb-placeholder {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-xs);
+    background: linear-gradient(145deg, #1a0e3a, #231050, #130d28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-light);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.entity-name {
+    margin-top: 0.35rem;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+    min-height: 1.8em;
+}
+
+.entity-status {
+    margin-top: 0.2rem;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.entity-status-ready {
+    color: #34d399;
+}
+
+.entity-status-training,
+.entity-status-queued {
+    color: #f59e0b;
+}
+
+.entity-status-failed {
+    color: #f87171;
+}
+
 .entity-tile-btn button,
 .entity-tile-active button {
     width: 100%;

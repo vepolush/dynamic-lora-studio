@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import time
+
 import streamlit as st
+
+from config import BACKEND_URL
+from services.entity_service import get_entities
 
 IMAGE_SIZES = [
     "512x512", "512x768", "768x512", "768x768",
@@ -32,6 +37,7 @@ COLORS = [
 
 
 def render_prompt_helper() -> None:
+    _refresh_entities_if_needed()
     st.markdown(
         '<div class="prompt-helper-header">'
         "<h3>Prompt Helper</h3>"
@@ -54,6 +60,8 @@ def render_prompt_helper() -> None:
 def _render_entities_section() -> None:
     with st.expander("Entities & LoRA", expanded=True):
         entities = st.session_state.get("entities", [])
+        if any(e.get("status") in ("queued", "training") for e in entities):
+            st.autorefresh(interval=5000, key="entities_training_autorefresh")
         active_id = st.session_state.get("active_entity_id")
 
         _render_entity_grid(entities, active_id)
@@ -111,16 +119,38 @@ def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
             with cols[col_idx]:
                 if slot < n_entities:
                     entity = entities[slot]
+                    status = str(entity.get("status", "queued"))
+                    can_select = status == "ready"
                     is_active = entity["id"] == active_id
-                    css_class = "entity-tile-active" if is_active else "entity-tile-btn"
+                    css_class = "entity-card-active" if is_active else "entity-card"
+                    preview_url = str(entity.get("preview_url") or "").strip()
+                    preview_src = _to_image_src(preview_url)
 
                     st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                    label = f"✦\n{entity['name']}"
-                    if st.button(label, key=f"entity_btn_{entity['id']}", use_container_width=True):
-                        if is_active:
-                            st.session_state["active_entity_id"] = None
-                        else:
-                            st.session_state["active_entity_id"] = entity["id"]
+                    if preview_src:
+                        st.image(preview_src, use_container_width=True)
+                    else:
+                        st.markdown(
+                            '<div class="entity-thumb-placeholder">✦</div>',
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown(
+                        f'<div class="entity-name">{entity["name"]}</div>'
+                        f'<div class="entity-status entity-status-{status}">{status}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    button_label = "Deselect" if is_active else "Select"
+                    if st.button(
+                        button_label,
+                        key=f"entity_btn_{entity['id']}",
+                        use_container_width=True,
+                        disabled=not can_select,
+                    ):
+                        st.session_state["active_entity_id"] = None if is_active else entity["id"]
+                        if not is_active:
+                            versions = entity.get("versions", [])
+                            if versions:
+                                st.session_state["entity_version_select"] = entity.get("active_version") or versions[-1]
                         st.rerun()
                     st.markdown("</div>", unsafe_allow_html=True)
                 else:
@@ -176,7 +206,7 @@ def _handle_entity_upload() -> None:
         with st.spinner("Uploading & training..."):
             entity = upload_entity(name, trigger, zip_bytes, zip_file.name)
         if entity:
-            st.session_state["entities"] = st.session_state.get("entities", []) + [entity]
+            st.session_state["entities"] = [entity] + st.session_state.get("entities", [])
             st.session_state["show_entity_form"] = False
             st.toast("Entity uploaded & training started")
             st.rerun()
@@ -373,3 +403,29 @@ def _get_active_entity() -> dict | None:
         if e["id"] == active_id:
             return e
     return None
+
+
+def _refresh_entities_if_needed() -> None:
+    now = time.time()
+    last = float(st.session_state.get("entities_last_refresh_ts", 0.0))
+    entities = st.session_state.get("entities", [])
+    has_training = any(e.get("status") in ("queued", "training") for e in entities)
+    should_refresh = (now - last > 6.0) or has_training
+    if not should_refresh:
+        return
+
+    latest = get_entities()
+    if latest:
+        st.session_state["entities"] = latest
+        active_id = st.session_state.get("active_entity_id")
+        if active_id and not any(e.get("id") == active_id for e in latest):
+            st.session_state["active_entity_id"] = None
+    st.session_state["entities_last_refresh_ts"] = now
+
+
+def _to_image_src(preview_url: str) -> str | None:
+    if not preview_url:
+        return None
+    if preview_url.startswith("http://") or preview_url.startswith("https://"):
+        return preview_url
+    return f"{BACKEND_URL.rstrip('/')}{preview_url}"

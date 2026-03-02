@@ -200,6 +200,7 @@ def _render_prompt_input(session: dict) -> None:
                 scheduler=settings.get("scheduler"),
                 quality=settings.get("quality", "Normal"),
                 entity_id=st.session_state.get("active_entity_id"),
+                entity_version=st.session_state.get("entity_version_select"),
                 lora_strength=st.session_state.get("lora_strength", 0.8),
                 style=settings.get("style"),
                 lighting=settings.get("lightning"),
