@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import time
+import zipfile
+from pathlib import Path
 
 import streamlit as st
+from PIL import Image
 
 from config import BACKEND_URL
 from services.entity_service import get_entities
@@ -60,8 +64,8 @@ def render_prompt_helper() -> None:
 def _render_entities_section() -> None:
     with st.expander("Entities & LoRA", expanded=True):
         entities = st.session_state.get("entities", [])
-        if any(e.get("status") in ("queued", "training") for e in entities):
-            _safe_autorefresh(interval_ms=5000, key="entities_training_autorefresh")
+        if entities:
+            _safe_autorefresh(interval_ms=10000, key="entities_polling_autorefresh")
         active_id = st.session_state.get("active_entity_id")
 
         _render_entity_grid(entities, active_id)
@@ -91,14 +95,16 @@ def _render_entities_section() -> None:
                     key="entity_version_select",
                 )
 
+        lora_val = st.session_state.get("lora_strength_slider", st.session_state.get("lora_strength", 0.8))
         st.slider(
             "LoRA Strength",
             min_value=0.0,
             max_value=1.5,
-            value=st.session_state.get("lora_strength", 0.8),
+            value=lora_val,
             step=0.05,
             key="lora_strength_slider",
         )
+        st.session_state["lora_strength"] = st.session_state.get("lora_strength_slider", lora_val)
         strength_cols = st.columns(4, gap="small")
         for idx, value in enumerate((0.8, 1.0, 1.2, 1.4)):
             with strength_cols[idx]:
@@ -108,6 +114,7 @@ def _render_entities_section() -> None:
                     use_container_width=True,
                 ):
                     st.session_state["lora_strength"] = value
+                    st.session_state["lora_strength_slider"] = value
                     st.rerun()
 
         if st.session_state.get("show_entity_form", False):
@@ -115,6 +122,8 @@ def _render_entities_section() -> None:
 
 
 def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
+    from services.entity_service import get_entity_preview_base64
+
     n_entities = len(entities)
     cols_per_row = 3
     total_slots = n_entities + 1
@@ -133,8 +142,12 @@ def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
                     can_select = status == "ready"
                     is_active = entity["id"] == active_id
                     css_class = "entity-card-active" if is_active else "entity-card"
-                    preview_url = str(entity.get("preview_url") or "").strip()
-                    preview_src = _to_image_src(preview_url)
+
+                    preview_src = None
+                    if entity.get("preview_url"):
+                        preview_src = get_entity_preview_base64(entity["id"])
+                    if not preview_src:
+                        preview_src = _to_image_src(str(entity.get("preview_url") or "").strip())
 
                     st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
                     if preview_src:
@@ -174,6 +187,56 @@ def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
             slot += 1
 
 
+def _extract_images_from_zip(zip_bytes: bytes) -> list[tuple[str, Image.Image]]:
+    """Extract images from ZIP, return list of (filename, PIL Image)."""
+    result: list[tuple[str, Image.Image]] = []
+    img_ext = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+        for name in sorted(zf.namelist()):
+            if Path(name).suffix.lower() not in img_ext:
+                continue
+            if ".." in name or name.startswith("/"):
+                continue
+            try:
+                data = zf.read(name)
+                img = Image.open(io.BytesIO(data)).convert("RGB")
+                result.append((Path(name).name, img))
+            except Exception:
+                continue
+    return result
+
+
+@st.dialog("Crop images (1:1)")
+def _crop_images_dialog(images: list[tuple[str, Image.Image]]) -> list[tuple[str, bytes]] | None:
+    """Show crop UI for each image, return list of (filename, png_bytes) or None if cancelled."""
+    from streamlit_cropper import st_cropper
+
+    cropped: list[tuple[str, bytes]] = []
+    for i, (fname, img) in enumerate(images):
+        st.caption(f"Image {i + 1}/{len(images)}: {fname}")
+        cropped_img = st_cropper(
+            img,
+            realtime_update=True,
+            box_color="#7C3AED",
+            aspect_ratio=(1, 1),
+            key=f"entity_crop_{i}",
+        )
+        if cropped_img:
+            buf = io.BytesIO()
+            cropped_img.save(buf, format="PNG")
+            cropped.append((fname, buf.getvalue()))
+        st.divider()
+
+    col_apply, col_cancel = st.columns(2)
+    with col_apply:
+        if st.button("Apply crops & continue", key="crop_apply_btn"):
+            return cropped
+    with col_cancel:
+        if st.button("Cancel", key="crop_cancel_btn"):
+            return None
+    return None
+
+
 def _render_entity_form() -> None:
     st.markdown(
         '<div class="entity-form-wrapper">'
@@ -189,6 +252,25 @@ def _render_entity_form() -> None:
         key="entity_zip_upload",
         help="Upload a ZIP archive with 5-20 images of the subject",
     )
+    zip_file = st.session_state.get("entity_zip_upload")
+    if zip_file:
+        if st.button("Preview & Crop (1:1)", key="entity_preview_crop_btn"):
+            zip_bytes = zip_file.read()
+            images = _extract_images_from_zip(zip_bytes)
+            if not images:
+                st.error("No images found in ZIP")
+            else:
+                result = _crop_images_dialog(images)
+                if result:
+                    buf = io.BytesIO()
+                    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for fname, png_bytes in result:
+                            base = Path(fname).stem
+                            zf.writestr(f"{base}.png", png_bytes)
+                    st.session_state["entity_cropped_zip"] = buf.getvalue()
+                    st.session_state["entity_cropped_filename"] = zip_file.name or "cropped.zip"
+                    st.toast("Images cropped. Click Upload & Train.")
+                    st.rerun()
     st.selectbox(
         "Training Profile",
         options=["balanced", "strong", "fast"],
@@ -240,7 +322,14 @@ def _handle_entity_upload() -> None:
     elif not zip_file:
         st.error("Upload a ZIP file")
     else:
-        zip_bytes = zip_file.read()
+        cropped_zip = st.session_state.pop("entity_cropped_zip", None)
+        cropped_filename = st.session_state.pop("entity_cropped_filename", None)
+        if cropped_zip:
+            zip_bytes = cropped_zip
+            filename = cropped_filename or "cropped.zip"
+        else:
+            zip_bytes = zip_file.read()
+            filename = zip_file.name or "images.zip"
         with st.spinner("Uploading & training..."):
             entity = upload_entity(
                 name,
@@ -248,7 +337,7 @@ def _handle_entity_upload() -> None:
                 zip_bytes,
                 training_profile=training_profile,
                 caption_mode=caption_mode,
-                filename=zip_file.name,
+                filename=filename,
             )
         if entity and entity.get("id"):
             st.session_state["entities"] = [entity] + st.session_state.get("entities", [])

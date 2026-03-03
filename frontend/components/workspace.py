@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import base64
+import html
+import json
 import random
 from datetime import datetime
 
@@ -76,13 +77,26 @@ def _render_chat_history(session: dict) -> None:
         )
         return
 
-    chat_container = st.container(height=520)
+    chat_height = st.session_state.get("chat_height", 520)
+    heights = [400, 520, 700, 900, 1100]
+    idx = heights.index(chat_height) if chat_height in heights else 1
+    new_h = st.selectbox(
+        "Chat height",
+        options=heights,
+        index=idx,
+        key="chat_height_select",
+    )
+    if new_h != chat_height:
+        st.session_state["chat_height"] = new_h
+        st.rerun()
+
+    chat_container = st.container(height=chat_height)
     with chat_container:
         for msg in messages:
-            _render_message(msg)
+            _render_message(msg, session["id"])
 
 
-def _render_message(msg: dict) -> None:
+def _render_message(msg: dict, session_id: str) -> None:
     """Render a single chat message (user prompt + generated images)."""
     prompt = msg.get("prompt", "")
     enhanced = msg.get("enhanced_prompt", "")
@@ -108,14 +122,22 @@ def _render_message(msg: dict) -> None:
         specs_parts.append(settings["color"])
     specs_line = " · ".join(specs_parts) if specs_parts else ""
 
+    settings_str = json.dumps(settings, ensure_ascii=False, indent=2) if settings else "{}"
+    prompt_esc = html.escape(prompt or "", quote=True)
+    settings_esc = html.escape(settings_str, quote=True)
+
     st.markdown(
+        f'<div class="msg-with-actions">'
         f'<div class="chat-msg user-msg">'
         f'<div class="msg-header">'
         f'<span class="msg-author">You</span>'
         f'<span class="msg-time">{time_str}</span>'
-        f"</div>"
-        f'<div class="msg-prompt">{prompt}</div>'
-        f"</div>",
+        f'<span class="msg-copy-btns">'
+        f'<button class="copy-btn" data-text="{prompt_esc}" title="Copy prompt" onclick="navigator.clipboard.writeText(this.dataset.text);this.textContent=\'✓\';setTimeout(()=>this.textContent=\'📋\',800)">📋</button>'
+        f'<button class="copy-btn" data-text="{settings_esc}" title="Copy settings" onclick="navigator.clipboard.writeText(this.dataset.text);this.textContent=\'✓\';setTimeout(()=>this.textContent=\'⚙️\',800)">⚙️</button>'
+        f"</span></div>"
+        f'<div class="msg-prompt">{html.escape(prompt or "")}</div>'
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -138,26 +160,38 @@ def _render_message(msg: dict) -> None:
     )
 
     if images:
-        _render_message_images(images)
+        _render_message_images(session_id, images)
 
     if enhanced and enhanced != prompt:
         with st.expander("Enhanced prompt", expanded=False):
             st.caption(enhanced)
 
 
-def _render_message_images(images: list[dict]) -> None:
-    """Render images from base64 data or filenames."""
+def _render_message_images(session_id: str, images: list[dict]) -> None:
+    """Render images from base64 data or by fetching from backend when missing."""
+    from services.session_service import get_session_image_base64
+
     n = len(images)
     cols_count = min(n, 2) if n <= 4 else 2
     cols = st.columns(cols_count, gap="small")
 
     for i, img_data in enumerate(images):
         with cols[i % cols_count]:
-            b64 = img_data.get("base64", "")
+            b64_uri = img_data.get("base64")
+            if b64_uri and isinstance(b64_uri, str) and b64_uri.startswith("data:"):
+                img_src = b64_uri
+            elif b64_uri and isinstance(b64_uri, str):
+                img_src = f"data:image/png;base64,{b64_uri}"
+            else:
+                filename = img_data.get("filename")
+                if filename:
+                    img_src = get_session_image_base64(session_id, filename)
+                else:
+                    img_src = None
             seed = img_data.get("seed", "?")
-            if b64:
+            if img_src:
                 st.image(
-                    f"data:image/png;base64,{b64}",
+                    img_src,
                     use_container_width=True,
                     caption=f"seed: {seed}",
                 )
@@ -201,7 +235,7 @@ def _render_prompt_input(session: dict) -> None:
                 quality=settings.get("quality", "Normal"),
                 entity_id=st.session_state.get("active_entity_id"),
                 entity_version=st.session_state.get("entity_version_select"),
-                lora_strength=st.session_state.get("lora_strength", 0.8),
+                lora_strength=st.session_state.get("lora_strength_slider", st.session_state.get("lora_strength", 0.8)),
                 style=settings.get("style"),
                 lighting=settings.get("lightning"),
                 color=settings.get("color"),

@@ -116,6 +116,7 @@ def init_session_state() -> None:
         "lora_strength": 0.8,
         "show_entity_form": False,
         "chat_messages": {},
+        "chat_height": 520,
     }
 
     for key, value in defaults.items():

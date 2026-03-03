@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,20 @@ from typing import Any
 from api.client import APIClient, BackendError
 from config import BACKEND_ENABLED
 from state.session import MOCK_SESSIONS
+
+
+def get_session_image_base64(session_id: str, filename: str) -> str | None:
+    """Fetch session image as base64 data URI. Returns None if not found."""
+    if not BACKEND_ENABLED:
+        return None
+    try:
+        client = APIClient()
+        data = client.get_session_image_bytes(session_id, filename)
+        if not data:
+            return None
+        return f"data:image/png;base64,{base64.b64encode(data).decode()}"
+    except BackendError:
+        return None
 
 
 def _make_local_session(title: str) -> dict[str, Any]:

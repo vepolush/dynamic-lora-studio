@@ -67,6 +67,27 @@ class APIClient:
 
         return response.json()
 
+    def _get_bytes(self, path: str, timeout: float | None = None) -> bytes | None:
+        """Fetch raw bytes (e.g. for images). Returns None on error."""
+        url = f"{self.base_url}{path}"
+        req_timeout = timeout if timeout is not None else QUICK_TIMEOUT
+        try:
+            with httpx.Client(timeout=req_timeout) as client:
+                response = client.get(url)
+                if response.status_code != 200:
+                    return None
+                return response.content
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return None
+
+    def get_entity_preview_bytes(self, entity_id: str) -> bytes | None:
+        """Fetch entity preview image as bytes. Returns None if not found."""
+        return self._get_bytes(f"/api/entities/{entity_id}/preview", timeout=QUICK_TIMEOUT)
+
+    def get_session_image_bytes(self, session_id: str, filename: str) -> bytes | None:
+        """Fetch session image as bytes. Returns None if not found."""
+        return self._get_bytes(f"/api/images/{session_id}/{filename}", timeout=QUICK_TIMEOUT)
+
     # ---- Sessions ----
 
     def get_sessions(self) -> list[dict[str, Any]]:
