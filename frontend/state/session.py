@@ -97,7 +97,8 @@ def init_session_state() -> None:
                 st.session_state["sessions"] = get_sessions()
             if "entities" not in st.session_state:
                 from services.entity_service import get_entities
-                st.session_state["entities"] = get_entities()
+                entities = get_entities()
+                st.session_state["entities"] = entities if entities is not None else []
 
     sessions = st.session_state["sessions"]
     if not sessions:
@@ -161,7 +162,10 @@ def add_chat_message(session_id: str, message: dict) -> None:
 
 
 def get_favourite_count() -> int:
-    return sum(1 for s in st.session_state.get("sessions", []) if s.get("favourite"))
+    """Count favourite images across all sessions."""
+    from services.session_service import get_sessions
+    sessions = get_sessions()
+    return sum(len(s.get("favourite_image_filenames", [])) for s in sessions)
 
 
 def format_session_date(iso_str: str) -> str:

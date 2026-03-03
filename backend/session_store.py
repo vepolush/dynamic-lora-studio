@@ -84,6 +84,7 @@ def list_sessions() -> list[dict[str, Any]]:
                 "created_at": data["created_at"],
                 "message_count": len(data.get("messages", [])),
                 "favourite": data.get("favourite", False),
+                "favourite_image_filenames": data.get("favourite_image_filenames", []),
             }
             msgs = data.get("messages", [])
             if msgs:
@@ -101,7 +102,7 @@ def update_session(session_id: str, updates: dict[str, Any]) -> dict[str, Any] |
     if not path.exists():
         return None
     data = _read_json(path)
-    for key in ("title", "favourite"):
+    for key in ("title", "favourite", "favourite_image_filenames"):
         if key in updates:
             data[key] = updates[key]
     _write_json(path, data)

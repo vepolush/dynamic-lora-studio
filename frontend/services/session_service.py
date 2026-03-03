@@ -71,12 +71,23 @@ def create_session(title: str = "New session") -> dict[str, Any] | None:
         return None
 
 
-def update_session(session_id: str, *, title: str | None = None, favourite: bool | None = None) -> dict[str, Any] | None:
+def update_session(
+    session_id: str,
+    *,
+    title: str | None = None,
+    favourite: bool | None = None,
+    favourite_image_filenames: list[str] | None = None,
+) -> dict[str, Any] | None:
     """Update session metadata on backend."""
     if not BACKEND_ENABLED:
         return None
     try:
         client = APIClient()
-        return client.update_session(session_id, title=title, favourite=favourite)
+        return client.update_session(
+            session_id,
+            title=title,
+            favourite=favourite,
+            favourite_image_filenames=favourite_image_filenames,
+        )
     except BackendError:
         return None

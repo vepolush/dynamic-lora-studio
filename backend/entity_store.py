@@ -206,3 +206,12 @@ def create_entity(
     }
     _write_json(_metadata_path(entity_id), metadata)
     return _normalize_entity(metadata)
+
+
+def delete_entity(entity_id: str) -> bool:
+    """Delete entity directory with all artifacts."""
+    entity_dir = _entity_dir(entity_id)
+    if not entity_dir.exists():
+        return False
+    shutil.rmtree(entity_dir, ignore_errors=True)
+    return True

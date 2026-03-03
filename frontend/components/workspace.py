@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import random
+from urllib.parse import unquote
 from datetime import datetime
 
 import streamlit as st
 
 from state.session import (
+    SCHEDULER_MAP,
     add_chat_message,
     format_session_date,
     get_active_session,
@@ -38,7 +41,81 @@ _STARS_HTML = "".join(
 )
 
 
+def _scheduler_display_from_key(scheduler_key: str | None) -> str:
+    for label, value in SCHEDULER_MAP.items():
+        if value == (scheduler_key or ""):
+            return label
+    return "Auto"
+
+
+def _apply_message_settings(settings: dict) -> None:
+    """Apply message settings to Prompt Helper widgets."""
+    if not settings:
+        return
+
+    width = settings.get("width")
+    height = settings.get("height")
+    if isinstance(width, int) and isinstance(height, int):
+        size = f"{width}x{height}"
+        if size in {"512x512", "640x640", "512x768", "512x896", "768x512", "896x512"}:
+            st.session_state["size_select"] = size
+
+    if settings.get("steps") is not None:
+        st.session_state["steps_slider"] = int(settings.get("steps", 0))
+    if settings.get("guidance_scale") is not None:
+        st.session_state["guidance_slider"] = float(settings.get("guidance_scale", 7.5))
+    if settings.get("seed") is not None:
+        st.session_state["seed_input"] = int(settings.get("seed", -1))
+    else:
+        st.session_state["seed_input"] = -1
+    if settings.get("num_images") is not None:
+        st.session_state["num_images_input"] = int(settings.get("num_images", 1))
+    if settings.get("quality") is not None:
+        st.session_state["quality_slider"] = settings.get("quality", "Normal")
+
+    st.session_state["scheduler_select"] = _scheduler_display_from_key(settings.get("scheduler"))
+    st.session_state["style_select"] = settings.get("style") or "None"
+    st.session_state["lightning_select"] = settings.get("lighting") or "None"
+    st.session_state["color_select"] = settings.get("color") or "Default"
+
+    st.session_state["generation_settings"] = {
+        **st.session_state.get("generation_settings", {}),
+        "steps": st.session_state.get("steps_slider", 0),
+        "guidance_scale": st.session_state.get("guidance_slider", 7.5),
+        "image_size": st.session_state.get("size_select", "512x512"),
+        "seed": st.session_state.get("seed_input", -1),
+        "num_images": st.session_state.get("num_images_input", 1),
+        "quality": st.session_state.get("quality_slider", "Normal"),
+        "style": st.session_state.get("style_select", "None"),
+        "lightning": st.session_state.get("lightning_select", "None"),
+        "color": st.session_state.get("color_select", "Default"),
+        "scheduler": st.session_state.get("scheduler_select", "Auto"),
+    }
+
+
+def _apply_settings_from_query() -> None:
+    payload = st.query_params.get("apply_settings_b64")
+    if not payload:
+        return
+    if isinstance(payload, list):
+        payload = payload[0] if payload else ""
+
+    try:
+        decoded = base64.b64decode(unquote(str(payload))).decode("utf-8")
+        settings = json.loads(decoded)
+        if isinstance(settings, dict):
+            _apply_message_settings(settings)
+            st.toast("Settings applied to Prompt Helper")
+    except Exception:
+        st.toast("Failed to apply settings")
+    finally:
+        if "apply_settings_b64" in st.query_params:
+            del st.query_params["apply_settings_b64"]
+        st.rerun()
+
+
 def render_workspace() -> None:
+    _apply_settings_from_query()
     st.markdown(f'<div class="stars-layer">{_STARS_HTML}</div>', unsafe_allow_html=True)
 
     session = get_active_session()
@@ -123,23 +200,38 @@ def _render_message(msg: dict, session_id: str) -> None:
     specs_line = " · ".join(specs_parts) if specs_parts else ""
 
     settings_str = json.dumps(settings, ensure_ascii=False, indent=2) if settings else "{}"
-    prompt_esc = html.escape(prompt or "", quote=True)
-    settings_esc = html.escape(settings_str, quote=True)
+    prompt_b64 = base64.b64encode((prompt or "").encode("utf-8")).decode("ascii")
+    settings_b64 = base64.b64encode(settings_str.encode("utf-8")).decode("ascii")
+    msg_id = f"msg-copy-{msg.get('id', abs(hash(prompt + time_str)) % 10**8)}".replace("'", "")
 
-    st.markdown(
-        f'<div class="msg-with-actions">'
-        f'<div class="chat-msg user-msg">'
-        f'<div class="msg-header">'
+    copy_html = (
+        f'<div class="msg-with-actions" id="{msg_id}">'
+        '<div class="chat-msg user-msg">'
+        '<div class="msg-header">'
         f'<span class="msg-author">You</span>'
-        f'<span class="msg-time">{time_str}</span>'
-        f'<span class="msg-copy-btns">'
-        f'<button class="copy-btn" data-text="{prompt_esc}" title="Copy prompt" onclick="navigator.clipboard.writeText(this.dataset.text);this.textContent=\'✓\';setTimeout(()=>this.textContent=\'📋\',800)">📋</button>'
-        f'<button class="copy-btn" data-text="{settings_esc}" title="Copy settings" onclick="navigator.clipboard.writeText(this.dataset.text);this.textContent=\'✓\';setTimeout(()=>this.textContent=\'⚙️\',800)">⚙️</button>'
-        f"</span></div>"
+        f'<span class="msg-time">{html.escape(time_str)}</span>'
+        "</div>"
+        '<div class="msg-copy-row">'
+        f'<button class="copy-btn" data-b64="{prompt_b64}" data-icon="📋" title="Copy prompt">📋</button>'
+        f'<button class="copy-btn apply-style-btn" data-b64="{settings_b64}" title="Apply settings">⚙️</button>'
+        "</div>"
         f'<div class="msg-prompt">{html.escape(prompt or "")}</div>'
-        f"</div></div>",
-        unsafe_allow_html=True,
+        "</div></div>"
+        "<script>"
+        "(function(){"
+        f"var c=document.getElementById('{msg_id}');if(c){{"
+        "var copyBtn=c.querySelector('.copy-btn:not(.apply-style-btn)');"
+        "if(copyBtn){copyBtn.onclick=function(){var btn=this;var t=atob(btn.getAttribute('data-b64'));"
+        "if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){btn.textContent='✓';setTimeout(function(){btn.textContent=btn.getAttribute('data-icon');},600);});}"
+        "else{var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);btn.textContent='✓';setTimeout(function(){btn.textContent=btn.getAttribute('data-icon');},600);}"
+        "};}"
+        "var applyBtn=c.querySelector('.apply-style-btn');"
+        "if(applyBtn){applyBtn.onclick=function(){var u=new URL(window.location.href);u.searchParams.set('apply_settings_b64', encodeURIComponent(this.getAttribute('data-b64')));window.location.assign(u.toString());};}"
+        "}"
+        "})();"
+        "</script>"
     )
+    st.html(copy_html, unsafe_allow_javascript=True)
 
     gen_info = f"{gen_time:.1f}s" if gen_time else ""
     num_imgs = len(images)
@@ -160,41 +252,63 @@ def _render_message(msg: dict, session_id: str) -> None:
     )
 
     if images:
-        _render_message_images(session_id, images)
+        _render_message_images(session_id, images, prompt=prompt)
 
     if enhanced and enhanced != prompt:
         with st.expander("Enhanced prompt", expanded=False):
             st.caption(enhanced)
 
 
-def _render_message_images(session_id: str, images: list[dict]) -> None:
+def _render_message_images(session_id: str, images: list[dict], prompt: str = "") -> None:
     """Render images from base64 data or by fetching from backend when missing."""
-    from services.session_service import get_session_image_base64
+    from services.session_service import get_session, get_session_image_base64, update_session
+
+    full_session = get_session(session_id)
+    fav_filenames = set(full_session.get("favourite_image_filenames", [])) if full_session else set()
 
     n = len(images)
     cols_count = min(n, 2) if n <= 4 else 2
-    cols = st.columns(cols_count, gap="small")
+    max_img_width = 280
+    if n == 1:
+        cols = st.columns([1, 2, 1])
+        col = cols[1]
+    else:
+        cols = st.columns(cols_count, gap="small")
+        col = None
 
     for i, img_data in enumerate(images):
-        with cols[i % cols_count]:
+        target_col = col if n == 1 else cols[i % cols_count]
+        with target_col:
+            filename = img_data.get("filename")
             b64_uri = img_data.get("base64")
             if b64_uri and isinstance(b64_uri, str) and b64_uri.startswith("data:"):
                 img_src = b64_uri
             elif b64_uri and isinstance(b64_uri, str):
                 img_src = f"data:image/png;base64,{b64_uri}"
+            elif filename:
+                img_src = get_session_image_base64(session_id, filename)
             else:
-                filename = img_data.get("filename")
-                if filename:
-                    img_src = get_session_image_base64(session_id, filename)
-                else:
-                    img_src = None
+                img_src = None
             seed = img_data.get("seed", "?")
             if img_src:
+                key_safe = "".join(c if c.isalnum() else "_" for c in f"{session_id}_{filename or i}")
+                st.markdown('<div class="like-on-image">', unsafe_allow_html=True)
                 st.image(
                     img_src,
-                    use_container_width=True,
+                    width=max_img_width,
                     caption=f"seed: {seed}",
                 )
+                if filename:
+                    is_fav = filename in fav_filenames
+                    if st.button("♥" if is_fav else "♡", key=f"fav_img_{key_safe}", help="Toggle favourite"):
+                        new_fav = list(fav_filenames)
+                        if is_fav:
+                            new_fav.remove(filename)
+                        else:
+                            new_fav.append(filename)
+                        if update_session(session_id, favourite_image_filenames=new_fav):
+                            st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
             else:
                 st.markdown(
                     '<div class="image-card"><div class="placeholder-orb"></div></div>',
@@ -206,7 +320,6 @@ def _render_prompt_input(session: dict) -> None:
     from services.generation_service import generate
     from components.prompt_helper import (
         get_current_settings,
-        build_helper_specs,
         build_effective_prompt,
     )
 
@@ -216,8 +329,6 @@ def _render_prompt_input(session: dict) -> None:
         size = settings.get("image_size", "512x512")
         w, h = (int(x) for x in size.split("x"))
         effective_prompt = build_effective_prompt(prompt)
-        helper_specs = build_helper_specs()
-
         steps_val = settings.get("steps", 0)
 
         with st.spinner("Generating image..."):
@@ -250,10 +361,33 @@ def _render_prompt_input(session: dict) -> None:
                     "images": result.get("images", []),
                     "generation_time": result.get("generation_time", 0),
                     "settings": {
+                        "steps": steps_val if steps_val > 0 else 25,
+                        "guidance_scale": settings.get("guidance_scale", 7.5),
+                        "width": w,
+                        "height": h,
+                        "seed": None if settings.get("seed", -1) == -1 else settings.get("seed"),
+                        "num_images": settings.get("num_images", 1),
+                        "scheduler": settings.get("scheduler"),
+                        "quality": settings.get("quality", "Normal"),
                         "style": settings.get("style"),
                         "lighting": settings.get("lightning"),
                         "color": settings.get("color"),
                     },
+                }
+            else:
+                message["settings"] = {
+                    **message.get("settings", {}),
+                    "steps": steps_val if steps_val > 0 else 25,
+                    "guidance_scale": settings.get("guidance_scale", 7.5),
+                    "width": w,
+                    "height": h,
+                    "seed": None if settings.get("seed", -1) == -1 else settings.get("seed"),
+                    "num_images": settings.get("num_images", 1),
+                    "scheduler": settings.get("scheduler"),
+                    "quality": settings.get("quality", "Normal"),
+                    "style": message.get("settings", {}).get("style", settings.get("style")),
+                    "lighting": message.get("settings", {}).get("lighting", settings.get("lightning")),
+                    "color": message.get("settings", {}).get("color", settings.get("color")),
                 }
 
             for img in result.get("images", []):
@@ -269,6 +403,13 @@ def _render_prompt_input(session: dict) -> None:
                 if s["id"] == session["id"]:
                     s["message_count"] = s.get("message_count", 0) + 1
                     s["last_prompt"] = effective_prompt
+                    if s.get("message_count", 0) == 1:
+                        first_five = " ".join(effective_prompt.split()[:5])
+                        if first_five:
+                            from services.session_service import update_session
+                            updated = update_session(session["id"], title=first_five)
+                            if updated:
+                                s["title"] = first_five
                     break
 
             st.toast("Generation complete!")

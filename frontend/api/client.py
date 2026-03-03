@@ -100,12 +100,21 @@ class APIClient:
     def create_session(self, title: str = "New session") -> dict[str, Any]:
         return self._request("POST", "/api/sessions", json={"title": title}, timeout=QUICK_TIMEOUT)  # type: ignore
 
-    def update_session(self, session_id: str, *, title: str | None = None, favourite: bool | None = None) -> dict[str, Any]:
+    def update_session(
+        self,
+        session_id: str,
+        *,
+        title: str | None = None,
+        favourite: bool | None = None,
+        favourite_image_filenames: list[str] | None = None,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {}
         if title is not None:
             payload["title"] = title
         if favourite is not None:
             payload["favourite"] = favourite
+        if favourite_image_filenames is not None:
+            payload["favourite_image_filenames"] = favourite_image_filenames
         return self._request("PUT", f"/api/sessions/{session_id}", json=payload, timeout=QUICK_TIMEOUT)  # type: ignore
 
     def delete_session(self, session_id: str) -> None:

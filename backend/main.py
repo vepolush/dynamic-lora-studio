@@ -17,6 +17,7 @@ from dataset_prep import DatasetValidationError, prepare_entity_dataset
 from entity_store import (
     DATA_DIR,
     create_entity,
+    delete_entity as store_delete_entity,
     load_entity_preview_bytes,
     get_entity as store_get_entity,
     get_entity_metadata,
@@ -94,6 +95,7 @@ class CreateSessionRequest(BaseModel):
 class UpdateSessionRequest(BaseModel):
     title: str | None = None
     favourite: bool | None = None
+    favourite_image_filenames: list[str] | None = None
 
 
 class GenerateRequest(BaseModel):
@@ -155,6 +157,8 @@ def update_session(session_id: str, req: UpdateSessionRequest):
         updates["title"] = req.title
     if req.favourite is not None:
         updates["favourite"] = req.favourite
+    if req.favourite_image_filenames is not None:
+        updates["favourite_image_filenames"] = req.favourite_image_filenames
     result = store_update_session(session_id, updates)
     if result is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -468,3 +472,10 @@ def upload_entity(
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+@app.delete("/api/entities/{entity_id}")
+def delete_entity(entity_id: str):
+    if not store_delete_entity(entity_id):
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return {"status": "deleted"}

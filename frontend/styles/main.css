@@ -566,18 +566,25 @@ header[data-testid="stHeader"] {
 .msg-time {
     font-size: 0.65rem;
     color: var(--text-muted);
+    margin-left: auto;
 }
 
-.msg-copy-btns {
+.msg-copy-row {
     display: flex;
     gap: 0.25rem;
+    margin-bottom: 0.35rem;
+    justify-content: flex-end;
     opacity: 0;
-    transition: opacity 0.2s;
+    max-height: 0;
+    overflow: hidden;
+    transition: opacity 0.16s ease, max-height 0.16s ease;
+    pointer-events: none;
 }
 
-.msg-with-actions:hover .msg-copy-btns,
-.msg-header:hover .msg-copy-btns {
+.msg-with-actions:hover .msg-copy-row {
     opacity: 1;
+    max-height: 30px;
+    pointer-events: auto;
 }
 
 .copy-btn {
@@ -595,6 +602,43 @@ header[data-testid="stHeader"] {
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
+}
+
+.like-on-image {
+    position: relative;
+    width: fit-content;
+    margin: 0 auto;
+}
+
+.like-on-image .stButton {
+    position: absolute;
+    right: 10px;
+    bottom: 34px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 5;
+}
+
+.like-on-image:hover .stButton {
+    opacity: 1;
+}
+
+.like-on-image .stButton > button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    padding: 0;
+    border: 1px solid var(--glass-border);
+    background: rgba(18, 18, 34, 0.82);
+    color: #f472b6;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.like-on-image .stButton > button:hover {
+    border-color: var(--accent);
+    background: rgba(35, 16, 80, 0.92);
 }
 
 .msg-prompt {
@@ -673,6 +717,7 @@ header[data-testid="stHeader"] {
     overflow: hidden;
 }
 
+
 [data-testid="stExpander"] summary {
     color: var(--text-primary);
     font-weight: 600;
@@ -683,6 +728,7 @@ header[data-testid="stHeader"] {
 [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
     border-top: 1px solid var(--border);
     padding: 0.4rem 0.6rem;
+    overflow: hidden;
 }
 
 /* Form controls */
@@ -748,23 +794,39 @@ header[data-testid="stHeader"] {
 /* ============================
    ENTITY GRID — Streamlit buttons
    ============================ */
-.entity-card,
-.entity-card-active {
+.entity-card-root {
+    position: relative;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 0.35rem;
-    min-height: 170px;
+    padding: 0.4rem;
+    margin-bottom: 0.35rem;
 }
 
-.entity-card-active {
+.entity-card-root.entity-card-active {
     border-color: var(--accent);
-    box-shadow: var(--glow-sm);
+    box-shadow: var(--glow-sm), 0 0 20px var(--accent-glow);
+}
+
+.entity-thumb-container {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: var(--radius-xs);
+    overflow: hidden;
+    background: linear-gradient(145deg, #1a0e3a, #231050);
+}
+
+.entity-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .entity-thumb-placeholder {
     width: 100%;
-    aspect-ratio: 1 / 1;
+    height: 100%;
+    min-height: 80px;
     border-radius: var(--radius-xs);
     background: linear-gradient(145deg, #1a0e3a, #231050, #130d28);
     display: flex;
@@ -782,13 +844,17 @@ header[data-testid="stHeader"] {
     font-weight: 600;
     line-height: 1.2;
     min-height: 1.8em;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .entity-status {
     margin-top: 0.2rem;
-    font-size: 0.62rem;
+    font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: visible;
 }
 
 .entity-status-ready {
@@ -866,24 +932,52 @@ header[data-testid="stHeader"] {
 }
 
 .entity-tile-add button {
-    background: transparent;
-    border: 1px dashed rgba(124, 58, 237, 0.3);
-    color: var(--text-muted);
+    background: transparent !important;
+    border: 1px dashed rgba(124, 58, 237, 0.4) !important;
+    color: var(--text-muted) !important;
     font-weight: 400;
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
     overflow: hidden;
+    min-height: 100px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.4rem !important;
+    font-size: 1.2rem !important;
+}
+
+.entity-tile-add button:hover {
+    border-color: var(--accent) !important;
+    color: var(--accent-light) !important;
 }
 
 .entity-tile-add button::before {
     display: none;
 }
 
-.entity-tile-add button:hover {
-    border-color: var(--accent);
-    color: var(--accent-light);
-    background: rgba(124, 58, 237, 0.05);
+.entity-tile-add .stButton > button {
+    width: 100%;
+    min-height: 120px !important;
+    border: 2px dashed rgba(124, 58, 237, 0.55) !important;
+    border-radius: var(--radius-sm) !important;
+    background: rgba(124, 58, 237, 0.03) !important;
+    color: var(--text-secondary) !important;
+    font-size: 1.1rem !important;
+    line-height: 1.35 !important;
+    font-weight: 500 !important;
+    justify-content: center !important;
+    text-align: center !important;
+    transition: all 0.18s ease !important;
+}
+
+.entity-tile-add .stButton > button:hover {
+    border-color: var(--accent) !important;
+    color: var(--accent-light) !important;
+    box-shadow: var(--glow-sm) !important;
+    background: rgba(124, 58, 237, 0.08) !important;
 }
 
 [data-testid="stExpander"] [data-testid="stHorizontalBlock"] > div {

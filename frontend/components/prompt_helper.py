@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import io
 import time
 import zipfile
@@ -14,9 +15,12 @@ from config import BACKEND_URL
 from services.entity_service import get_entities
 
 IMAGE_SIZES = [
-    "512x512", "512x768", "768x512", "768x768",
-    "512x896", "896x512", "768x1024", "1024x768",
-    "1024x1024", "640x640", "640x960", "960x640",
+    "512x512",   # default square
+    "640x640",   # max square
+    "512x768",   # portrait
+    "512x896",   # portrait
+    "768x512",   # landscape
+    "896x512",   # landscape
 ]
 
 STYLES = [
@@ -64,8 +68,8 @@ def render_prompt_helper() -> None:
 def _render_entities_section() -> None:
     with st.expander("Entities & LoRA", expanded=True):
         entities = st.session_state.get("entities", [])
-        if entities:
-            _safe_autorefresh(interval_ms=10000, key="entities_polling_autorefresh")
+        _safe_autorefresh(interval_ms=5000, key="entities_polling_autorefresh")
+
         active_id = st.session_state.get("active_entity_id")
 
         _render_entity_grid(entities, active_id)
@@ -84,6 +88,16 @@ def _render_entities_section() -> None:
                 f"</div></div>",
                 unsafe_allow_html=True,
             )
+
+            if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
+                from services.entity_service import delete_entity
+                if delete_entity(active_entity["id"]):
+                    st.session_state["entities"] = [e for e in st.session_state.get("entities", []) if e["id"] != active_entity["id"]]
+                    st.session_state["active_entity_id"] = None
+                    st.toast("Entity deleted")
+                    st.rerun()
+                else:
+                    st.error("Failed to delete entity")
 
             if len(versions) > 1:
                 active_ver = active_entity.get("active_version", versions[0])
@@ -105,17 +119,6 @@ def _render_entities_section() -> None:
             key="lora_strength_slider",
         )
         st.session_state["lora_strength"] = st.session_state.get("lora_strength_slider", lora_val)
-        strength_cols = st.columns(4, gap="small")
-        for idx, value in enumerate((0.8, 1.0, 1.2, 1.4)):
-            with strength_cols[idx]:
-                if st.button(
-                    f"{value:.1f}",
-                    key=f"lora_strength_preset_{value:.1f}",
-                    use_container_width=True,
-                ):
-                    st.session_state["lora_strength"] = value
-                    st.session_state["lora_strength_slider"] = value
-                    st.rerun()
 
         if st.session_state.get("show_entity_form", False):
             _render_entity_form()
@@ -149,36 +152,38 @@ def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
                     if not preview_src:
                         preview_src = _to_image_src(str(entity.get("preview_url") or "").strip())
 
-                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
+                    name_esc = html.escape(entity["name"], quote=True)
+                    status_esc = html.escape(status, quote=True)
                     if preview_src:
-                        st.image(preview_src, use_container_width=True)
+                        thumb_html = f'<img class="entity-thumb-img" src="{html.escape(preview_src, quote=True)}" alt="" />'
                     else:
+                        thumb_html = '<div class="entity-thumb-placeholder">✦</div>'
+
+                    with st.container():
                         st.markdown(
-                            '<div class="entity-thumb-placeholder">✦</div>',
+                            f'<div class="entity-card-root {css_class}">'
+                            f'<div class="entity-thumb-container">{thumb_html}</div>'
+                            f'<div class="entity-name">{name_esc}</div>'
+                            f'<div class="entity-status entity-status-{status_esc}">{status_esc}</div>'
+                            f'</div>',
                             unsafe_allow_html=True,
                         )
-                    st.markdown(
-                        f'<div class="entity-name">{entity["name"]}</div>'
-                        f'<div class="entity-status entity-status-{status}">{status}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    button_label = "Deselect" if is_active else "Select"
-                    if st.button(
-                        button_label,
-                        key=f"entity_btn_{entity['id']}",
-                        use_container_width=True,
-                        disabled=not can_select,
-                    ):
-                        st.session_state["active_entity_id"] = None if is_active else entity["id"]
-                        if not is_active:
-                            versions = entity.get("versions", [])
-                            if versions:
-                                st.session_state["entity_version_select"] = entity.get("active_version") or versions[-1]
-                        st.rerun()
-                    st.markdown("</div>", unsafe_allow_html=True)
+                        if can_select:
+                            btn_label = "Deselect" if is_active else "Select"
+                            if st.button(
+                                btn_label,
+                                key=f"entity_btn_{entity['id']}",
+                                use_container_width=True,
+                            ):
+                                st.session_state["active_entity_id"] = None if is_active else entity["id"]
+                                if not is_active:
+                                    versions = entity.get("versions", [])
+                                    if versions:
+                                        st.session_state["entity_version_select"] = entity.get("active_version") or versions[-1]
+                                st.rerun()
                 else:
                     st.markdown('<div class="entity-tile-add">', unsafe_allow_html=True)
-                    if st.button("+\nAdd new", key="add_entity_tile", use_container_width=True):
+                    if st.button("+\nAdd New", key="add_entity_tile", use_container_width=True):
                         st.session_state["show_entity_form"] = not st.session_state.get(
                             "show_entity_form", False
                         )
@@ -207,34 +212,81 @@ def _extract_images_from_zip(zip_bytes: bytes) -> list[tuple[str, Image.Image]]:
 
 
 @st.dialog("Crop images (1:1)")
-def _crop_images_dialog(images: list[tuple[str, Image.Image]]) -> list[tuple[str, bytes]] | None:
-    """Show crop UI for each image, return list of (filename, png_bytes) or None if cancelled."""
+def _crop_images_dialog(images: list[tuple[str, Image.Image]], zip_name: str) -> None:
+    """Show preview/crop UI and persist cropped archive in session state."""
     from streamlit_cropper import st_cropper
 
-    cropped: list[tuple[str, bytes]] = []
+    prepared: list[tuple[str, bytes]] = []
     for i, (fname, img) in enumerate(images):
         st.caption(f"Image {i + 1}/{len(images)}: {fname}")
-        cropped_img = st_cropper(
-            img,
-            realtime_update=True,
-            box_color="#7C3AED",
-            aspect_ratio=(1, 1),
-            key=f"entity_crop_{i}",
-        )
-        if cropped_img:
-            buf = io.BytesIO()
-            cropped_img.save(buf, format="PNG")
-            cropped.append((fname, buf.getvalue()))
+        st.image(img, use_container_width=True)
+
+        col_remove, col_crop = st.columns(2)
+        with col_remove:
+            remove_image = st.checkbox("Remove image", key=f"entity_remove_{i}")
+        with col_crop:
+            use_square_crop = st.checkbox("Crop 1:1", key=f"entity_crop_enable_{i}")
+
+        if remove_image:
+            st.divider()
+            continue
+
+        output_img = img
+        if use_square_crop:
+            preview_img = img.copy()
+            max_cropper_width = 360
+            if preview_img.width > max_cropper_width:
+                ratio = max_cropper_width / float(preview_img.width)
+                preview_img = preview_img.resize(
+                    (max_cropper_width, int(preview_img.height * ratio)),
+                    Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS,
+                )
+
+            rect = st_cropper(
+                preview_img,
+                realtime_update=True,
+                box_color="#7C3AED",
+                aspect_ratio=(1, 1),
+                return_type="box",
+                should_resize_image=False,
+                key=f"entity_crop_{i}",
+            )
+            if rect:
+                scale_x = img.width / float(preview_img.width)
+                scale_y = img.height / float(preview_img.height)
+                left = max(0, int(rect["left"] * scale_x))
+                top = max(0, int(rect["top"] * scale_y))
+                width = max(1, int(rect["width"] * scale_x))
+                height = max(1, int(rect["height"] * scale_y))
+                right = min(img.width, left + width)
+                bottom = min(img.height, top + height)
+                output_img = img.crop((left, top, right, bottom))
+
+        buf = io.BytesIO()
+        output_img.save(buf, format="PNG")
+        prepared.append((fname, buf.getvalue()))
         st.divider()
 
     col_apply, col_cancel = st.columns(2)
     with col_apply:
         if st.button("Apply crops & continue", key="crop_apply_btn"):
-            return cropped
+            if not prepared:
+                st.error("No images selected. Keep at least one image.")
+                return
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for fname, png_bytes in prepared:
+                    base = Path(fname).stem
+                    zf.writestr(f"{base}.png", png_bytes)
+            st.session_state["entity_cropped_zip"] = buf.getvalue()
+            st.session_state["entity_cropped_filename"] = zip_name or "cropped.zip"
+            st.session_state.pop("entity_crop_images_data", None)
+            st.toast("Images cropped. Click Upload & Train.")
+            st.rerun()
     with col_cancel:
         if st.button("Cancel", key="crop_cancel_btn"):
-            return None
-    return None
+            st.session_state.pop("entity_crop_images_data", None)
+            st.rerun()
 
 
 def _render_entity_form() -> None:
@@ -253,27 +305,27 @@ def _render_entity_form() -> None:
         help="Upload a ZIP archive with 5-20 images of the subject",
     )
     zip_file = st.session_state.get("entity_zip_upload")
-    if zip_file:
+    has_cropped = bool(st.session_state.get("entity_cropped_zip"))
+    if has_cropped:
+        st.success("Cropped images ready. Click Upload & Train below.")
+    elif zip_file:
         if st.button("Preview & Crop (1:1)", key="entity_preview_crop_btn"):
             zip_bytes = zip_file.read()
-            images = _extract_images_from_zip(zip_bytes)
-            if not images:
-                st.error("No images found in ZIP")
-            else:
-                result = _crop_images_dialog(images)
-                if result:
-                    buf = io.BytesIO()
-                    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                        for fname, png_bytes in result:
-                            base = Path(fname).stem
-                            zf.writestr(f"{base}.png", png_bytes)
-                    st.session_state["entity_cropped_zip"] = buf.getvalue()
-                    st.session_state["entity_cropped_filename"] = zip_file.name or "cropped.zip"
-                    st.toast("Images cropped. Click Upload & Train.")
-                    st.rerun()
+            orig_name = zip_file.name or "images.zip"
+            st.session_state["entity_crop_images_data"] = (zip_bytes, orig_name)
+            st.rerun()
+
+    if st.session_state.get("entity_crop_images_data"):
+        zip_bytes, orig_name = st.session_state["entity_crop_images_data"]
+        images = _extract_images_from_zip(zip_bytes)
+        if not images:
+            st.error("No images found in ZIP")
+            st.session_state.pop("entity_crop_images_data", None)
+        else:
+            _crop_images_dialog(images, orig_name)
     st.selectbox(
         "Training Profile",
-        options=["balanced", "strong", "fast"],
+        options=["strong", "balanced", "fast"],
         index=0,
         key="entity_training_profile",
         help=(
@@ -303,14 +355,46 @@ def _render_entity_form() -> None:
             st.rerun()
 
 
-def _handle_entity_upload() -> None:
+def _do_upload(
+    name: str,
+    trigger: str,
+    zip_bytes: bytes,
+    filename: str,
+    training_profile: str,
+    caption_mode: str,
+) -> None:
     from services.entity_service import upload_entity
 
+    with st.spinner("Uploading & training..."):
+        entity = upload_entity(
+            name,
+            trigger,
+            zip_bytes,
+            training_profile=training_profile,
+            caption_mode=caption_mode,
+            filename=filename,
+        )
+    if entity and entity.get("id"):
+        st.session_state["entities"] = [entity] + st.session_state.get("entities", [])
+        st.session_state["show_entity_form"] = False
+        st.toast("Entity uploaded & training started")
+        st.rerun()
+    else:
+        if isinstance(entity, dict) and entity.get("error"):
+            st.error(f"Upload failed: {entity['error']}")
+        else:
+            st.error("Upload failed. Check backend in Settings.")
+
+
+def _handle_entity_upload() -> None:
     name = st.session_state.get("new_entity_name", "").strip()
     trigger = st.session_state.get("new_entity_trigger", "").strip()
     training_profile = st.session_state.get("entity_training_profile", "balanced")
     caption_mode_label = st.session_state.get("entity_caption_mode", "Auto")
     zip_file = st.session_state.get("entity_zip_upload")
+    cropped_zip = st.session_state.get("entity_cropped_zip")
+    cropped_filename = st.session_state.get("entity_cropped_filename")
+
     caption_mode_map = {
         "Auto": "auto",
         "None": "none",
@@ -319,36 +403,23 @@ def _handle_entity_upload() -> None:
     caption_mode = caption_mode_map.get(caption_mode_label, "auto")
     if not name or not trigger:
         st.error("Name and trigger word required")
-    elif not zip_file:
-        st.error("Upload a ZIP file")
+    elif cropped_zip:
+        _do_upload(
+            name, trigger, cropped_zip,
+            cropped_filename or "cropped.zip",
+            training_profile, caption_mode,
+        )
+        st.session_state.pop("entity_cropped_zip", None)
+        st.session_state.pop("entity_cropped_filename", None)
+    elif zip_file:
+        zip_bytes = zip_file.read()
+        _do_upload(
+            name, trigger, zip_bytes,
+            zip_file.name or "images.zip",
+            training_profile, caption_mode,
+        )
     else:
-        cropped_zip = st.session_state.pop("entity_cropped_zip", None)
-        cropped_filename = st.session_state.pop("entity_cropped_filename", None)
-        if cropped_zip:
-            zip_bytes = cropped_zip
-            filename = cropped_filename or "cropped.zip"
-        else:
-            zip_bytes = zip_file.read()
-            filename = zip_file.name or "images.zip"
-        with st.spinner("Uploading & training..."):
-            entity = upload_entity(
-                name,
-                trigger,
-                zip_bytes,
-                training_profile=training_profile,
-                caption_mode=caption_mode,
-                filename=filename,
-            )
-        if entity and entity.get("id"):
-            st.session_state["entities"] = [entity] + st.session_state.get("entities", [])
-            st.session_state["show_entity_form"] = False
-            st.toast("Entity uploaded & training started")
-            st.rerun()
-        else:
-            if isinstance(entity, dict) and entity.get("error"):
-                st.error(f"Upload failed: {entity['error']}")
-            else:
-                st.error("Upload failed. Check backend in Settings.")
+        st.error("Upload a ZIP file or use Preview & Crop first")
 
 
 # ---------------------------------------------------------------------------
@@ -387,10 +458,12 @@ def _render_technical_section() -> None:
             key="guidance_slider",
         )
 
+        size_val = settings.get("image_size", "512x512")
+        size_idx = IMAGE_SIZES.index(size_val) if size_val in IMAGE_SIZES else 0
         st.selectbox(
             "Image Size",
             IMAGE_SIZES,
-            index=IMAGE_SIZES.index(settings.get("image_size", "512x512")),
+            index=size_idx,
             key="size_select",
         )
 
@@ -547,12 +620,12 @@ def _refresh_entities_if_needed() -> None:
     last = float(st.session_state.get("entities_last_refresh_ts", 0.0))
     entities = st.session_state.get("entities", [])
     has_training = any(e.get("status") in ("queued", "training") for e in entities)
-    should_refresh = (now - last > 6.0) or has_training
+    should_refresh = (now - last > 3.0) or has_training
     if not should_refresh:
         return
 
     latest = get_entities()
-    if isinstance(latest, list):
+    if latest is not None:
         st.session_state["entities"] = latest
         active_id = st.session_state.get("active_entity_id")
         if active_id and not any(e.get("id") == active_id for e in latest):

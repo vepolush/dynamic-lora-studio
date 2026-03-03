@@ -24,8 +24,8 @@ def get_entity_preview_base64(entity_id: str) -> str | None:
         return None
 
 
-def get_entities() -> list[dict[str, Any]]:
-    """Fetch entities from backend or return mock data."""
+def get_entities() -> list[dict[str, Any]] | None:
+    """Fetch entities from backend or return mock data. Returns None on error."""
     if not BACKEND_ENABLED:
         return MOCK_ENTITIES.copy()
 
@@ -33,7 +33,7 @@ def get_entities() -> list[dict[str, Any]]:
         client = APIClient()
         return client.get_entities()
     except BackendError:
-        return []
+        return None
 
 
 def upload_entity(
