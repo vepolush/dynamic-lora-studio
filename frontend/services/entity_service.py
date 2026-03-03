@@ -25,6 +25,7 @@ def upload_entity(
     name: str,
     trigger_word: str,
     zip_bytes: bytes,
+    training_profile: str = "balanced",
     filename: str = "images.zip",
 ) -> dict[str, Any] | None:
     """Upload ZIP and train entity. Returns new entity on success, None on error."""
@@ -37,6 +38,7 @@ def upload_entity(
             name=name,
             trigger_word=trigger_word,
             zip_bytes=zip_bytes,
+            training_profile=training_profile,
             filename=filename,
         )
     except BackendError as e:

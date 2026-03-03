@@ -57,6 +57,30 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+TRAINING_PROFILES: dict[str, dict[str, Any]] = {
+    "fast": {
+        "steps": 700,
+        "rank": 8,
+        "learning_rate": 1e-4,
+        "lr_scheduler": "constant",
+        "warmup_ratio": 0.03,
+    },
+    "balanced": {
+        "steps": 1200,
+        "rank": 16,
+        "learning_rate": 1e-4,
+        "lr_scheduler": "polynomial",
+        "warmup_ratio": 0.06,
+    },
+    "strong": {
+        "steps": 1800,
+        "rank": 16,
+        "learning_rate": 8e-5,
+        "lr_scheduler": "cosine",
+        "warmup_ratio": 0.08,
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -282,14 +306,21 @@ def get_entity_preview(entity_id: str):
 def upload_entity(
     name: str = Form(...),
     trigger_word: str = Form(...),
+    training_profile: str = Form("balanced"),
     file: UploadFile = File(...),
 ):
     clean_name = name.strip()
     clean_trigger = trigger_word.strip()
+    profile_key = training_profile.strip().lower()
     if not clean_name:
         raise HTTPException(status_code=400, detail="Field 'name' is required")
     if not clean_trigger:
         raise HTTPException(status_code=400, detail="Field 'trigger_word' is required")
+    if profile_key not in TRAINING_PROFILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid training profile: {training_profile}. Use one of: {', '.join(TRAINING_PROFILES)}",
+        )
     if not file.filename:
         raise HTTPException(status_code=400, detail="ZIP file is required")
 
@@ -367,8 +398,11 @@ def upload_entity(
         queue_info = training_queue.enqueue(
             entity_id=entity_id,
             trigger_word=clean_trigger,
-            steps=500,
-            rank=8,
+            steps=int(TRAINING_PROFILES[profile_key]["steps"]),
+            rank=int(TRAINING_PROFILES[profile_key]["rank"]),
+            learning_rate=float(TRAINING_PROFILES[profile_key]["learning_rate"]),
+            lr_scheduler=str(TRAINING_PROFILES[profile_key]["lr_scheduler"]),
+            warmup_ratio=float(TRAINING_PROFILES[profile_key]["warmup_ratio"]),
         )
 
         started_entity = update_entity_metadata(
@@ -376,6 +410,8 @@ def upload_entity(
             {
                 "status": "queued",
                 "training_job_id": queue_info["job_id"],
+                "training_profile": profile_key,
+                "training_params": TRAINING_PROFILES[profile_key],
                 "error": None,
             },
         )

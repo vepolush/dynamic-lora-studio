@@ -99,6 +99,16 @@ def _render_entities_section() -> None:
             step=0.05,
             key="lora_strength_slider",
         )
+        strength_cols = st.columns(4, gap="small")
+        for idx, value in enumerate((0.8, 1.0, 1.2, 1.4)):
+            with strength_cols[idx]:
+                if st.button(
+                    f"{value:.1f}",
+                    key=f"lora_strength_preset_{value:.1f}",
+                    use_container_width=True,
+                ):
+                    st.session_state["lora_strength"] = value
+                    st.rerun()
 
         if st.session_state.get("show_entity_form", False):
             _render_entity_form()
@@ -179,6 +189,16 @@ def _render_entity_form() -> None:
         key="entity_zip_upload",
         help="Upload a ZIP archive with 5-20 images of the subject",
     )
+    st.selectbox(
+        "Training Profile",
+        options=["balanced", "strong", "fast"],
+        index=0,
+        key="entity_training_profile",
+        help=(
+            "balanced = good default, strong = better likeness but longer training, "
+            "fast = quickest smoke test."
+        ),
+    )
     col_train, col_cancel = st.columns(2, gap="small")
     with col_train:
         st.markdown('<div class="generate-btn">', unsafe_allow_html=True)
@@ -196,6 +216,7 @@ def _handle_entity_upload() -> None:
 
     name = st.session_state.get("new_entity_name", "").strip()
     trigger = st.session_state.get("new_entity_trigger", "").strip()
+    training_profile = st.session_state.get("entity_training_profile", "balanced")
     zip_file = st.session_state.get("entity_zip_upload")
     if not name or not trigger:
         st.error("Name and trigger word required")
@@ -204,7 +225,13 @@ def _handle_entity_upload() -> None:
     else:
         zip_bytes = zip_file.read()
         with st.spinner("Uploading & training..."):
-            entity = upload_entity(name, trigger, zip_bytes, zip_file.name)
+            entity = upload_entity(
+                name,
+                trigger,
+                zip_bytes,
+                training_profile=training_profile,
+                filename=zip_file.name,
+            )
         if entity and entity.get("id"):
             st.session_state["entities"] = [entity] + st.session_state.get("entities", [])
             st.session_state["show_entity_form"] = False

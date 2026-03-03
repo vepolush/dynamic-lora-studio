@@ -29,6 +29,9 @@ class TrainingJob:
     trigger_word: str
     steps: int
     rank: int
+    learning_rate: float
+    lr_scheduler: str
+    warmup_ratio: float
     queued_at: str
 
 
@@ -61,8 +64,11 @@ class TrainingQueueManager:
         *,
         entity_id: str,
         trigger_word: str,
-        steps: int = 500,
-        rank: int = 8,
+        steps: int = 1200,
+        rank: int = 16,
+        learning_rate: float = 1e-4,
+        lr_scheduler: str = "polynomial",
+        warmup_ratio: float = 0.06,
     ) -> dict[str, Any]:
         job = TrainingJob(
             id=f"job_{uuid.uuid4().hex[:12]}",
@@ -70,6 +76,9 @@ class TrainingQueueManager:
             trigger_word=trigger_word,
             steps=steps,
             rank=rank,
+            learning_rate=learning_rate,
+            lr_scheduler=lr_scheduler,
+            warmup_ratio=warmup_ratio,
             queued_at=_utc_now(),
         )
         with self._lock:
@@ -81,6 +90,13 @@ class TrainingQueueManager:
                 "started_at": None,
                 "finished_at": None,
                 "error": None,
+                "config": {
+                    "steps": steps,
+                    "rank": rank,
+                    "learning_rate": learning_rate,
+                    "lr_scheduler": lr_scheduler,
+                    "warmup_ratio": warmup_ratio,
+                },
             }
 
         self._queue.put(job)
@@ -139,6 +155,9 @@ class TrainingQueueManager:
                     trigger_word=job.trigger_word,
                     steps=job.steps,
                     rank=job.rank,
+                    learning_rate=job.learning_rate,
+                    lr_scheduler=job.lr_scheduler,
+                    warmup_ratio=job.warmup_ratio,
                 )
                 raw = get_entity_metadata(job.entity_id) or {}
                 versions = raw.get("versions", [])

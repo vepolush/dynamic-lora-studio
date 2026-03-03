@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from pathlib import Path
@@ -26,6 +27,9 @@ from model_manager import MODEL_DIR, MODEL_ID
 IMAGE_SIZE = 512
 DEFAULT_LEARNING_RATE = 1e-4
 DEFAULT_BATCH_SIZE = 1
+DEFAULT_LR_SCHEDULER = "polynomial"
+DEFAULT_WARMUP_RATIO = 0.06
+DEFAULT_MAX_GRAD_NORM = 1.0
 
 
 class EntityDataset(Dataset):
@@ -83,8 +87,12 @@ def train_lora_for_entity(
     *,
     entity_id: str,
     trigger_word: str,
-    steps: int = 500,
-    rank: int = 8,
+    steps: int = 1200,
+    rank: int = 16,
+    learning_rate: float = DEFAULT_LEARNING_RATE,
+    lr_scheduler: str = DEFAULT_LR_SCHEDULER,
+    warmup_ratio: float = DEFAULT_WARMUP_RATIO,
+    max_grad_norm: float = DEFAULT_MAX_GRAD_NORM,
 ) -> dict[str, Any]:
     """Run LoRA fine-tuning and persist versioned weights."""
     entity_dir = DATA_DIR / "storage" / "entities" / entity_id
@@ -135,10 +143,9 @@ def train_lora_for_entity(
 
     dataset = EntityDataset(dataset_dir, tokenizer, trigger_word)
     dataloader = DataLoader(dataset, batch_size=DEFAULT_BATCH_SIZE, shuffle=True)
-    optimizer = torch.optim.AdamW(
-        [p for p in unet.parameters() if p.requires_grad],
-        lr=DEFAULT_LEARNING_RATE,
-    )
+    trainable_params = [p for p in unet.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable_params, lr=learning_rate)
+    warmup_steps = max(1, int(steps * max(0.0, min(warmup_ratio, 0.25))))
 
     started_at = time.time()
     global_step = 0
@@ -166,6 +173,19 @@ def train_lora_for_entity(
             loss = F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
 
             loss.backward()
+            if max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    trainable_params,
+                    max_grad_norm,
+                )
+            lr_scale = _compute_lr_scale(
+                step=global_step + 1,
+                total_steps=steps,
+                warmup_steps=warmup_steps,
+                scheduler=lr_scheduler,
+            )
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = learning_rate * lr_scale
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             global_step += 1
@@ -188,7 +208,11 @@ def train_lora_for_entity(
         "weights_file": weights_path.name,
         "trainer": "native_diffusers_lora",
         "training_time_seconds": round(duration_s, 3),
-        "learning_rate": DEFAULT_LEARNING_RATE,
+        "learning_rate": learning_rate,
+        "lr_scheduler": lr_scheduler,
+        "warmup_ratio": warmup_ratio,
+        "warmup_steps": warmup_steps,
+        "max_grad_norm": max_grad_norm,
         "batch_size": DEFAULT_BATCH_SIZE,
         "device": str(device),
     }
@@ -201,3 +225,20 @@ def train_lora_for_entity(
         "weights_path": str(weights_path),
         "training_time_seconds": round(duration_s, 3),
     }
+
+
+def _compute_lr_scale(*, step: int, total_steps: int, warmup_steps: int, scheduler: str) -> float:
+    if step <= warmup_steps:
+        return max(1e-3, float(step) / float(max(1, warmup_steps)))
+
+    progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+    progress = min(max(progress, 0.0), 1.0)
+    name = scheduler.lower().strip()
+
+    if name == "constant":
+        return 1.0
+    if name == "cosine":
+        return max(1e-3, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    if name == "polynomial":
+        return max(1e-3, (1.0 - progress) ** 1.0)
+    return 1.0

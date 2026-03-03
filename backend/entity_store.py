@@ -92,6 +92,8 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
         "error": metadata.get("error"),
         "training_job_id": metadata.get("training_job_id"),
         "preview_error": metadata.get("preview_error"),
+        "training_profile": metadata.get("training_profile"),
+        "training_params": metadata.get("training_params"),
         "versions": versions,
         "active_version": active_version,
         "preview_url": preview_url,
@@ -194,6 +196,8 @@ def create_entity(
         "active_version": None,
         "preview_url": None,
         "image_count": 0,
+        "training_profile": None,
+        "training_params": None,
         "uploaded_zip_path": str(saved_zip_path),
     }
     _write_json(_metadata_path(entity_id), metadata)

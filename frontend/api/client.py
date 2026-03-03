@@ -101,13 +101,18 @@ class APIClient:
         name: str,
         trigger_word: str,
         zip_bytes: bytes,
+        training_profile: str = "balanced",
         filename: str = "images.zip",
     ) -> dict[str, Any]:
         files = {"file": (filename, zip_bytes, "application/zip")}
         data = self._request(
             "POST",
             "/api/entities",
-            data={"name": name, "trigger_word": trigger_word},
+            data={
+                "name": name,
+                "trigger_word": trigger_word,
+                "training_profile": training_profile,
+            },
             files=files,
             timeout=ENTITY_UPLOAD_TIMEOUT,
         )  # type: ignore
