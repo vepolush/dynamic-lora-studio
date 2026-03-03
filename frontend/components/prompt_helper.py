@@ -647,7 +647,5 @@ def _safe_autorefresh(*, interval_ms: int, key: str) -> None:
     if callable(auto):
         auto(interval=interval_ms, key=key)
         return
-
-    # Fallback: keep page stable and let manual reruns happen.
-    # This avoids crashing on Streamlit versions without st.autorefresh.
+    
     st.caption("Training in progress... refresh page if status is stale.")
