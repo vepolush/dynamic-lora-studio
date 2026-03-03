@@ -102,6 +102,7 @@ class APIClient:
         trigger_word: str,
         zip_bytes: bytes,
         training_profile: str = "balanced",
+        caption_mode: str = "auto",
         filename: str = "images.zip",
     ) -> dict[str, Any]:
         files = {"file": (filename, zip_bytes, "application/zip")}
@@ -112,6 +113,7 @@ class APIClient:
                 "name": name,
                 "trigger_word": trigger_word,
                 "training_profile": training_profile,
+                "caption_mode": caption_mode,
             },
             files=files,
             timeout=ENTITY_UPLOAD_TIMEOUT,

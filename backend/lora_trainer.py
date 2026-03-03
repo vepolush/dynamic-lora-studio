@@ -49,14 +49,22 @@ class EntityDataset(Dataset):
                 transforms.Normalize([0.5], [0.5]),
             ]
         )
-        prompt = f"a photo of {trigger_word}"
-        self.input_ids = self.tokenizer(
-            prompt,
-            padding="max_length",
-            truncation=True,
-            max_length=self.tokenizer.model_max_length,
-            return_tensors="pt",
-        ).input_ids[0]
+        self.input_ids_list = []
+        for image_path in self.image_paths:
+            caption_path = image_path.with_suffix(".txt")
+            if caption_path.exists():
+                caption = caption_path.read_text(encoding="utf-8", errors="ignore").strip()
+            else:
+                caption = ""
+            prompt = _build_training_prompt(trigger_word=trigger_word, caption=caption)
+            input_ids = self.tokenizer(
+                prompt,
+                padding="max_length",
+                truncation=True,
+                max_length=self.tokenizer.model_max_length,
+                return_tensors="pt",
+            ).input_ids[0]
+            self.input_ids_list.append(input_ids)
 
     def __len__(self) -> int:
         return len(self.image_paths)
@@ -65,7 +73,7 @@ class EntityDataset(Dataset):
         image = Image.open(self.image_paths[idx]).convert("RGB")
         return {
             "pixel_values": self.transform(image),
-            "input_ids": self.input_ids,
+            "input_ids": self.input_ids_list[idx],
         }
 
 
@@ -242,3 +250,12 @@ def _compute_lr_scale(*, step: int, total_steps: int, warmup_steps: int, schedul
     if name == "polynomial":
         return max(1e-3, (1.0 - progress) ** 1.0)
     return 1.0
+
+
+def _build_training_prompt(*, trigger_word: str, caption: str) -> str:
+    cleaned = " ".join(caption.replace("\n", " ").split()).strip()
+    if not cleaned:
+        return f"a photo of {trigger_word}"
+    if trigger_word.lower() in cleaned.lower():
+        return cleaned
+    return f"a photo of {trigger_word}, {cleaned}"

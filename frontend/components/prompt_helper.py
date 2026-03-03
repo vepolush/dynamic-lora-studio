@@ -199,6 +199,16 @@ def _render_entity_form() -> None:
             "fast = quickest smoke test."
         ),
     )
+    st.selectbox(
+        "Caption mode",
+        options=["Auto", "None", "Use provided"],
+        index=0,
+        key="entity_caption_mode",
+        help=(
+            "Auto = BLIP base captions, None = no captions, "
+            "Use provided = read .txt files from uploaded ZIP."
+        ),
+    )
     col_train, col_cancel = st.columns(2, gap="small")
     with col_train:
         st.markdown('<div class="generate-btn">', unsafe_allow_html=True)
@@ -217,7 +227,14 @@ def _handle_entity_upload() -> None:
     name = st.session_state.get("new_entity_name", "").strip()
     trigger = st.session_state.get("new_entity_trigger", "").strip()
     training_profile = st.session_state.get("entity_training_profile", "balanced")
+    caption_mode_label = st.session_state.get("entity_caption_mode", "Auto")
     zip_file = st.session_state.get("entity_zip_upload")
+    caption_mode_map = {
+        "Auto": "auto",
+        "None": "none",
+        "Use provided": "manual_zip",
+    }
+    caption_mode = caption_mode_map.get(caption_mode_label, "auto")
     if not name or not trigger:
         st.error("Name and trigger word required")
     elif not zip_file:
@@ -230,6 +247,7 @@ def _handle_entity_upload() -> None:
                 trigger,
                 zip_bytes,
                 training_profile=training_profile,
+                caption_mode=caption_mode,
                 filename=zip_file.name,
             )
         if entity and entity.get("id"):

@@ -12,6 +12,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from captioning import CAPTION_MODES, CaptioningError, apply_caption_mode
 from dataset_prep import DatasetValidationError, prepare_entity_dataset
 from entity_store import (
     DATA_DIR,
@@ -307,11 +308,13 @@ def upload_entity(
     name: str = Form(...),
     trigger_word: str = Form(...),
     training_profile: str = Form("balanced"),
+    caption_mode: str = Form("auto"),
     file: UploadFile = File(...),
 ):
     clean_name = name.strip()
     clean_trigger = trigger_word.strip()
     profile_key = training_profile.strip().lower()
+    caption_mode_key = caption_mode.strip().lower()
     if not clean_name:
         raise HTTPException(status_code=400, detail="Field 'name' is required")
     if not clean_trigger:
@@ -320,6 +323,11 @@ def upload_entity(
         raise HTTPException(
             status_code=400,
             detail=f"Invalid training profile: {training_profile}. Use one of: {', '.join(TRAINING_PROFILES)}",
+        )
+    if caption_mode_key not in CAPTION_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid caption mode: {caption_mode}. Use one of: {', '.join(sorted(CAPTION_MODES))}",
         )
     if not file.filename:
         raise HTTPException(status_code=400, detail="ZIP file is required")
@@ -389,10 +397,40 @@ def upload_entity(
             )
             raise HTTPException(status_code=500, detail=f"Failed to prepare dataset: {e}") from e
 
+        try:
+            caption_stats = apply_caption_mode(
+                entity_dir=entity_dir,
+                zip_path=uploaded_zip_path,
+                trigger_word=clean_trigger,
+                caption_mode=caption_mode_key,
+            )
+        except CaptioningError as e:
+            update_entity_metadata(
+                entity_id,
+                {
+                    "status": "failed",
+                    "error": str(e),
+                    "image_count": int(manifest.get("image_count", 0)),
+                },
+            )
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            update_entity_metadata(
+                entity_id,
+                {
+                    "status": "failed",
+                    "error": f"Caption processing failed: {e}",
+                    "image_count": int(manifest.get("image_count", 0)),
+                },
+            )
+            raise HTTPException(status_code=500, detail=f"Failed to process captions: {e}") from e
+
         updated_entity = update_entity_metadata(
             entity_id,
             {
                 "image_count": int(manifest.get("image_count", 0)),
+                "caption_mode": caption_mode_key,
+                "caption_stats": caption_stats,
             },
         )
         queue_info = training_queue.enqueue(

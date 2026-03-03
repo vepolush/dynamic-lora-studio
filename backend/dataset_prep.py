@@ -91,16 +91,13 @@ def prepare_entity_dataset(*, entity_dir: Path, zip_path: Path, entity_id: str) 
 
                 try:
                     image = Image.open(io.BytesIO(raw))
-                except UnidentifiedImageError as exc:
-                    raise DatasetValidationError(
-                        f"File '{member.filename}' is not a valid image"
-                    ) from exc
+                except UnidentifiedImageError:
+                    # Allow auxiliary files (e.g., .txt captions) in ZIP archive.
+                    continue
 
                 image_format = (image.format or "").upper()
                 if image_format not in ALLOWED_IMAGE_FORMATS:
-                    raise DatasetValidationError(
-                        f"Unsupported image format in '{member.filename}': {image_format or 'unknown'}"
-                    )
+                    continue
 
                 image = ImageOps.exif_transpose(image).convert("RGB")
                 prepared = ImageOps.fit(

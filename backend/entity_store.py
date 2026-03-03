@@ -89,6 +89,8 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
         "name": str(metadata.get("name", "")),
         "trigger_word": str(metadata.get("trigger_word", "")),
         "status": str(metadata.get("status", "queued")),
+        "caption_mode": metadata.get("caption_mode"),
+        "caption_stats": metadata.get("caption_stats"),
         "error": metadata.get("error"),
         "training_job_id": metadata.get("training_job_id"),
         "preview_error": metadata.get("preview_error"),
@@ -198,6 +200,8 @@ def create_entity(
         "image_count": 0,
         "training_profile": None,
         "training_params": None,
+        "caption_mode": None,
+        "caption_stats": None,
         "uploaded_zip_path": str(saved_zip_path),
     }
     _write_json(_metadata_path(entity_id), metadata)
