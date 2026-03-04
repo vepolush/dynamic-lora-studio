@@ -1,4 +1,4 @@
-"""Persistent file-based storage for LoRA entities."""
+"""Entity storage — SQLAlchemy for metadata, files on disk for binaries."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from db import EntityModel, init_db, session_scope
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/workspace/data"))
 ENTITIES_DIR = DATA_DIR / "storage" / "entities"
@@ -28,10 +30,6 @@ def _entity_dir(entity_id: str) -> Path:
     return ENTITIES_DIR / entity_id
 
 
-def _metadata_path(entity_id: str) -> Path:
-    return _entity_dir(entity_id) / "metadata.json"
-
-
 def entity_dataset_dir(entity_id: str) -> Path:
     return _entity_dir(entity_id) / "dataset"
 
@@ -44,16 +42,6 @@ def entity_preview_path(entity_id: str) -> Path:
     return _entity_dir(entity_id) / "preview.png"
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _write_json(path: Path, data: dict[str, Any]) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
 def _version_sort_key(name: str) -> tuple[int, str]:
     match = re.match(r"v(\d+)", name.lower())
     if match:
@@ -62,7 +50,7 @@ def _version_sort_key(name: str) -> tuple[int, str]:
 
 
 def _collect_versions(entity_id: str) -> list[str]:
-    weights_dir = _entity_dir(entity_id) / "weights"
+    weights_dir = entity_weights_dir(entity_id)
     if not weights_dir.exists():
         return []
     versions = [p.name for p in weights_dir.iterdir() if p.is_dir()]
@@ -70,7 +58,31 @@ def _collect_versions(entity_id: str) -> list[str]:
     return versions
 
 
+def _entity_to_dict(row: EntityModel) -> dict[str, Any]:
+    """Convert DB row to raw metadata dict (legacy format)."""
+    return {
+        "id": row.id,
+        "name": row.name,
+        "trigger_word": row.trigger_word,
+        "status": row.status,
+        "created_at": row.created_at,
+        "image_count": row.image_count,
+        "training_profile": row.training_profile,
+        "training_params": json.loads(row.training_params) if row.training_params else None,
+        "active_version": row.active_version,
+        "caption_mode": row.caption_mode,
+        "caption_stats": json.loads(row.caption_stats) if row.caption_stats else None,
+        "error": row.error,
+        "training_job_id": row.training_job_id,
+        "preview_error": row.preview_error,
+        "uploaded_zip_path": row.uploaded_zip_path,
+        "preview_url": row.preview_url,
+        "versions": [],
+    }
+
+
 def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Normalize entity for API response."""
     entity_id = str(metadata["id"])
     versions = metadata.get("versions")
     if not isinstance(versions, list):
@@ -107,40 +119,45 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
 
 def list_entities() -> list[dict[str, Any]]:
     _ensure_root()
+    init_db()
     entities: list[dict[str, Any]] = []
-    for entity_path in sorted(ENTITIES_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not entity_path.is_dir():
-            continue
-        metadata_path = entity_path / "metadata.json"
-        if not metadata_path.exists():
-            continue
-        try:
-            metadata = _read_json(metadata_path)
-            entities.append(_normalize_entity(metadata))
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-            continue
+    with session_scope() as session:
+        rows = (
+            session.query(EntityModel)
+            .order_by(EntityModel.created_at.desc())
+            .all()
+        )
+        for row in rows:
+            if not _entity_dir(row.id).exists():
+                continue
+            meta = _entity_to_dict(row)
+            meta["versions"] = _collect_versions(row.id)
+            entities.append(_normalize_entity(meta))
     return entities
 
 
 def get_entity(entity_id: str) -> dict[str, Any] | None:
-    metadata_path = _metadata_path(entity_id)
-    if not metadata_path.exists():
-        return None
-    try:
-        metadata = _read_json(metadata_path)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
-    return _normalize_entity(metadata)
+    init_db()
+    with session_scope() as session:
+        row = session.get(EntityModel, entity_id)
+        if row is None:
+            return None
+        if not _entity_dir(entity_id).exists():
+            return None
+        meta = _entity_to_dict(row)
+        meta["versions"] = _collect_versions(entity_id)
+        return _normalize_entity(meta)
 
 
 def get_entity_metadata(entity_id: str) -> dict[str, Any] | None:
-    metadata_path = _metadata_path(entity_id)
-    if not metadata_path.exists():
-        return None
-    try:
-        return _read_json(metadata_path)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
+    init_db()
+    with session_scope() as session:
+        row = session.get(EntityModel, entity_id)
+        if row is None:
+            return None
+        meta = _entity_to_dict(row)
+        meta["versions"] = _collect_versions(entity_id)
+        return meta
 
 
 def load_entity_preview_bytes(entity_id: str) -> bytes | None:
@@ -152,7 +169,6 @@ def load_entity_preview_bytes(entity_id: str) -> bytes | None:
 
 
 def list_dataset_images(entity_id: str) -> list[dict[str, Any]]:
-    """List images in entity dataset. Returns [{filename, size}, ...]."""
     ds_dir = entity_dataset_dir(entity_id)
     if not ds_dir.exists():
         return []
@@ -168,7 +184,6 @@ def list_dataset_images(entity_id: str) -> list[dict[str, Any]]:
 
 
 def load_dataset_image_bytes(entity_id: str, filename: str) -> bytes | None:
-    """Load dataset image bytes. Returns None if not found."""
     ds_dir = entity_dataset_dir(entity_id)
     path = ds_dir / filename
     if not path.exists() or not path.is_file() or path.suffix.lower() != ".png":
@@ -181,17 +196,24 @@ def load_dataset_image_bytes(entity_id: str, filename: str) -> bytes | None:
 
 
 def update_entity_metadata(entity_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
-    metadata_path = _metadata_path(entity_id)
-    if not metadata_path.exists():
-        return None
-    try:
-        metadata = _read_json(metadata_path)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
+    init_db()
+    with session_scope() as session:
+        row = session.get(EntityModel, entity_id)
+        if row is None:
+            return None
 
-    metadata.update(updates)
-    _write_json(metadata_path, metadata)
-    return _normalize_entity(metadata)
+        json_fields = ("training_params", "caption_stats")
+        for key, value in updates.items():
+            if hasattr(row, key):
+                if key in json_fields and value is not None:
+                    setattr(row, key, json.dumps(value, ensure_ascii=False))
+                else:
+                    setattr(row, key, value)
+
+        session.flush()
+        meta = _entity_to_dict(row)
+        meta["versions"] = _collect_versions(entity_id)
+        return _normalize_entity(meta)
 
 
 def create_entity(
@@ -202,6 +224,7 @@ def create_entity(
     temp_zip_path: Path,
 ) -> dict[str, Any]:
     _ensure_root()
+    init_db()
     now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
     entity_id = f"entity_{uuid.uuid4().hex[:8]}_{_slugify(name)[:32]}"
 
@@ -217,30 +240,30 @@ def create_entity(
     saved_zip_path = temp_dir / f"upload_{uuid.uuid4().hex[:8]}_{Path(uploaded_filename).name}"
     shutil.copy2(temp_zip_path, saved_zip_path)
 
-    metadata: dict[str, Any] = {
-        "id": entity_id,
-        "name": name,
-        "trigger_word": trigger_word,
-        "status": "queued",
-        "created_at": now,
-        "versions": [],
-        "active_version": None,
-        "preview_url": None,
-        "image_count": 0,
-        "training_profile": None,
-        "training_params": None,
-        "caption_mode": None,
-        "caption_stats": None,
-        "uploaded_zip_path": str(saved_zip_path),
-    }
-    _write_json(_metadata_path(entity_id), metadata)
-    return _normalize_entity(metadata)
+    with session_scope() as session:
+        entity = EntityModel(
+            id=entity_id,
+            name=name,
+            trigger_word=trigger_word,
+            status="queued",
+            created_at=now,
+            image_count=0,
+            uploaded_zip_path=str(saved_zip_path),
+        )
+        session.add(entity)
+
+    meta = get_entity_metadata(entity_id)
+    return _normalize_entity(meta) if meta else {"id": entity_id, "name": name, "trigger_word": trigger_word}
 
 
 def delete_entity(entity_id: str) -> bool:
-    """Delete entity directory with all artifacts."""
+    init_db()
     entity_dir = _entity_dir(entity_id)
-    if not entity_dir.exists():
-        return False
-    shutil.rmtree(entity_dir, ignore_errors=True)
+    with session_scope() as session:
+        row = session.get(EntityModel, entity_id)
+        if row is None:
+            return False
+        session.delete(row)
+    if entity_dir.exists():
+        shutil.rmtree(entity_dir, ignore_errors=True)
     return True

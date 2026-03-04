@@ -55,6 +55,8 @@ from training_queue import training_queue
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from db import init_db
+    init_db()
     training_queue.start()
     try:
         ml_manager.load_model()

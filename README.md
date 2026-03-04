@@ -119,7 +119,7 @@ The frontend uses `BACKEND_URL=http://localhost:8000` by default (both run on th
 
 | Variable      | Default                    | Description                    |
 |---------------|----------------------------|--------------------------------|
-| `DATA_DIR`    | `/workspace/data`          | Entities, sessions, temp      |
+| `DATA_DIR`    | `/workspace/data`          | Entities, sessions, DB, temp  |
 | `HF_HOME`     | `/workspace/.cache/huggingface` | HuggingFace cache        |
 | `BACKEND_URL` | `http://localhost:8000`    | Backend API URL (frontend)     |
 
@@ -138,8 +138,10 @@ dynamic-lora-studio/
 │   ├── training_queue.py  # Background training worker
 │   ├── dataset_prep.py   # ZIP ingest, image preprocessing
 │   ├── captioning.py      # BLIP captions for training
-│   ├── entity_store.py   # Entity storage
-│   └── session_store.py  # Session/image storage
+│   ├── db.py             # SQLAlchemy models, SQLite
+│   ├── entity_store.py   # Entity storage (DB + disk)
+│   ├── session_store.py  # Session/message storage (DB + disk)
+│   └── migrate_json_to_db.py  # One-time JSON → SQLite migration
 ├── frontend/
 │   ├── app.py            # Streamlit entry
 │   ├── components/       # Sidebar, workspace, prompt_helper, settings
