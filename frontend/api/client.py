@@ -49,6 +49,8 @@ class APIClient:
                     response = client.request(
                         method, url, data=form_data, files=files, timeout=req_timeout
                     )
+                elif data:
+                    response = client.request(method, url, data=data, timeout=req_timeout)
                 else:
                     response = client.request(method, url, json=json, timeout=req_timeout)
         except httpx.ConnectError as e:
@@ -157,6 +159,82 @@ class APIClient:
                     entity["_training_job_id"] = data["job_id"]
                 return entity
         return data  # type: ignore
+
+    def update_entity(
+        self,
+        entity_id: str,
+        *,
+        name: str | None = None,
+        trigger_word: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if trigger_word is not None:
+            payload["trigger_word"] = trigger_word
+        return self._request("PUT", f"/api/entities/{entity_id}", json=payload, timeout=QUICK_TIMEOUT)  # type: ignore
+
+    def get_entity_dataset(self, entity_id: str) -> list[dict[str, Any]]:
+        data = self._request("GET", f"/api/entities/{entity_id}/dataset", timeout=QUICK_TIMEOUT)
+        return data.get("images", []) if isinstance(data, dict) else []
+
+    def get_dataset_image_bytes(self, entity_id: str, filename: str) -> bytes | None:
+        url = f"{self.base_url}/api/entities/{entity_id}/dataset/{filename}"
+        try:
+            with httpx.Client(timeout=QUICK_TIMEOUT) as client:
+                response = client.get(url)
+                if response.status_code != 200:
+                    return None
+                return response.content
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return None
+
+    def remove_dataset_images(self, entity_id: str, filenames: list[str]) -> dict[str, Any]:
+        return self._request(
+            "DELETE",
+            f"/api/entities/{entity_id}/dataset",
+            json={"filenames": filenames},
+            timeout=QUICK_TIMEOUT,
+        )  # type: ignore
+
+    def retrain_entity(
+        self,
+        entity_id: str,
+        *,
+        zip_bytes: bytes | None = None,
+        filename: str = "images.zip",
+        remove_filenames: list[str] | None = None,
+        training_profile: str = "balanced",
+        caption_mode: str = "auto",
+        use_custom: bool = False,
+        steps: int = 1200,
+        rank: int = 16,
+        learning_rate: float = 1e-4,
+        lr_scheduler: str = "polynomial",
+        warmup_ratio: float = 0.06,
+    ) -> dict[str, Any]:
+        import json as _json
+        form_data: dict[str, str] = {
+            "training_profile": training_profile,
+            "caption_mode": caption_mode,
+            "use_custom": "true" if use_custom else "false",
+            "steps": str(steps),
+            "rank": str(rank),
+            "learning_rate": str(learning_rate),
+            "lr_scheduler": lr_scheduler,
+            "warmup_ratio": str(warmup_ratio),
+            "remove_filenames": _json.dumps(remove_filenames or []),
+        }
+        files: dict[str, tuple[str, bytes]] = {}
+        if zip_bytes:
+            files["file"] = (filename, zip_bytes, "application/zip")
+        return self._request(
+            "POST",
+            f"/api/entities/{entity_id}/retrain",
+            data=form_data,
+            files=files if files else None,
+            timeout=ENTITY_UPLOAD_TIMEOUT,
+        )  # type: ignore
 
     def delete_entity(self, entity_id: str) -> None:
         self._request("DELETE", f"/api/entities/{entity_id}")

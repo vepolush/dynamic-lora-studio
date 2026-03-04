@@ -151,6 +151,35 @@ def load_entity_preview_bytes(entity_id: str) -> bytes | None:
         return f.read()
 
 
+def list_dataset_images(entity_id: str) -> list[dict[str, Any]]:
+    """List images in entity dataset. Returns [{filename, size}, ...]."""
+    ds_dir = entity_dataset_dir(entity_id)
+    if not ds_dir.exists():
+        return []
+    result: list[dict[str, Any]] = []
+    for p in sorted(ds_dir.glob("*.png")):
+        if p.is_file():
+            try:
+                size = p.stat().st_size
+            except OSError:
+                size = 0
+            result.append({"filename": p.name, "size": size})
+    return result
+
+
+def load_dataset_image_bytes(entity_id: str, filename: str) -> bytes | None:
+    """Load dataset image bytes. Returns None if not found."""
+    ds_dir = entity_dataset_dir(entity_id)
+    path = ds_dir / filename
+    if not path.exists() or not path.is_file() or path.suffix.lower() != ".png":
+        return None
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 def update_entity_metadata(entity_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
     metadata_path = _metadata_path(entity_id)
     if not metadata_path.exists():

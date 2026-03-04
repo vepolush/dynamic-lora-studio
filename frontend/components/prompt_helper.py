@@ -89,6 +89,45 @@ def _render_entities_section() -> None:
                 unsafe_allow_html=True,
             )
 
+            with st.expander("Edit entity", expanded=False):
+                edit_name_key = f"entity_edit_name_{active_entity['id']}"
+                edit_trigger_key = f"entity_edit_trigger_{active_entity['id']}"
+                new_name = st.text_input(
+                    "Name",
+                    value=active_entity.get("name", ""),
+                    key=edit_name_key,
+                    placeholder="e.g. My Dog",
+                )
+                new_trigger = st.text_input(
+                    "Trigger word",
+                    value=active_entity.get("trigger_word", ""),
+                    key=edit_trigger_key,
+                    placeholder="e.g. <my_dog>",
+                )
+                if st.button("Save", key=f"entity_edit_save_{active_entity['id']}", type="primary"):
+                    name_val = new_name.strip()
+                    trigger_val = new_trigger.strip()
+                    if not name_val or not trigger_val:
+                        st.error("Name and trigger word cannot be empty")
+                    else:
+                        from services.entity_service import update_entity
+                        updated = update_entity(
+                            active_entity["id"],
+                            name=name_val,
+                            trigger_word=trigger_val,
+                        )
+                        if updated:
+                            for e in st.session_state.get("entities", []):
+                                if e["id"] == active_entity["id"]:
+                                    e.update(updated)
+                                    break
+                            st.toast("Entity updated")
+                            st.rerun()
+                        else:
+                            st.error("Failed to update entity")
+
+            _render_retrain_section(active_entity)
+
             if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
                 from services.entity_service import delete_entity
                 if delete_entity(active_entity["id"]):
@@ -122,6 +161,204 @@ def _render_entities_section() -> None:
 
         if st.session_state.get("show_entity_form", False):
             _render_entity_form()
+
+
+def _render_retrain_section(active_entity: dict) -> None:
+    """Render Retrain expander: dataset images, add/remove, presets, custom params."""
+    from services.entity_service import (
+        get_dataset_image_base64,
+        get_entity_dataset,
+        retrain_entity,
+    )
+
+    status = str(active_entity.get("status", ""))
+    if status not in ("ready",):
+        return
+
+    with st.expander("Retrain", expanded=False):
+        entity_id = active_entity["id"]
+        dataset_images = get_entity_dataset(entity_id) or []
+        remove_key = f"retrain_remove_{entity_id}"
+
+        st.caption("Current dataset (check to remove)")
+        to_remove: list[str] = []
+        if not dataset_images:
+            st.info("No images. Add new images below.")
+        else:
+            cols = st.columns(3, gap="small")
+            for i, img_info in enumerate(dataset_images):
+                fname = img_info.get("filename", "")
+                if not fname:
+                    continue
+                with cols[i % 3]:
+                    thumb = get_dataset_image_base64(entity_id, fname)
+                    if thumb:
+                        st.image(thumb, width=80)
+                    if st.checkbox("Remove", key=f"retrain_rm_{entity_id}_{i}", help=fname):
+                        to_remove.append(fname)
+
+        st.divider()
+        st.caption("Add new images (ZIP)")
+        retrain_zip = st.file_uploader(
+            "ZIP with new images",
+            type=["zip"],
+            key=f"retrain_zip_{entity_id}",
+            help="Optional: add more images to dataset",
+        )
+        has_retrain_cropped = bool(st.session_state.get(f"retrain_cropped_zip_{entity_id}"))
+        if has_retrain_cropped:
+            st.success("Cropped images ready. Click Retrain below.")
+        elif retrain_zip:
+            if st.button("Preview & Crop (1:1)", key=f"retrain_crop_btn_{entity_id}"):
+                zip_bytes = retrain_zip.read()
+                orig_name = retrain_zip.name or "retrain.zip"
+                st.session_state[f"retrain_crop_data_{entity_id}"] = (zip_bytes, orig_name)
+                st.rerun()
+
+        if st.session_state.get(f"retrain_crop_data_{entity_id}"):
+            zip_bytes, orig_name = st.session_state[f"retrain_crop_data_{entity_id}"]
+            images = _extract_images_from_zip(zip_bytes)
+            if not images:
+                st.error("No images found in ZIP")
+                st.session_state.pop(f"retrain_crop_data_{entity_id}", None)
+            else:
+                _retrain_crop_dialog(images, orig_name, entity_id)
+
+        st.divider()
+        st.caption("Training params")
+        use_custom = st.checkbox("Custom params", key=f"retrain_custom_{entity_id}", value=False)
+        if use_custom:
+            col_s, col_r = st.columns(2)
+            with col_s:
+                steps_val = st.number_input("Steps", min_value=100, max_value=5000, value=1200, key=f"retrain_steps_{entity_id}")
+            with col_r:
+                rank_val = st.number_input("Rank", min_value=4, max_value=64, value=16, key=f"retrain_rank_{entity_id}")
+            lr_val = st.number_input("Learning rate", min_value=1e-6, max_value=1e-2, value=1e-4, format="%e", key=f"retrain_lr_{entity_id}")
+            lr_sched = st.selectbox("LR Scheduler", ["polynomial", "constant", "cosine"], key=f"retrain_sched_{entity_id}")
+            warmup_val = st.slider("Warmup ratio", 0.0, 0.25, 0.06, 0.01, key=f"retrain_warmup_{entity_id}")
+            profile = "balanced"
+        else:
+            profile = st.selectbox(
+                "Preset",
+                ["strong", "balanced", "fast"],
+                index=1,
+                key=f"retrain_preset_{entity_id}",
+                help="balanced = default, strong = better likeness, fast = quick",
+            )
+            steps_val = rank_val = lr_val = lr_sched = warmup_val = None
+
+        caption_mode = st.selectbox(
+            "Caption mode",
+            ["Auto", "None", "Use provided"],
+            index=0,
+            key=f"retrain_caption_{entity_id}",
+        )
+        caption_map = {"Auto": "auto", "None": "none", "Use provided": "manual_zip"}
+
+        if st.button("Retrain", key=f"retrain_btn_{entity_id}", type="primary"):
+            remaining = len(dataset_images) - len(to_remove) if dataset_images else 0
+            cropped = st.session_state.get(f"retrain_cropped_zip_{entity_id}")
+            zip_bytes = cropped if cropped else (retrain_zip.read() if retrain_zip else None)
+            zip_filename = st.session_state.get(f"retrain_cropped_filename_{entity_id}", "retrain.zip")
+
+            if remaining <= 0 and not zip_bytes:
+                st.error("Keep at least one image or add new ones before retraining")
+            else:
+                with st.spinner("Starting retrain..."):
+                    result = retrain_entity(
+                        entity_id,
+                        zip_bytes=zip_bytes,
+                        filename=zip_filename,
+                        remove_filenames=to_remove if to_remove else None,
+                        training_profile=profile,
+                        caption_mode=caption_map.get(caption_mode, "auto"),
+                        use_custom=use_custom,
+                        steps=steps_val or 1200,
+                        rank=rank_val or 16,
+                        learning_rate=lr_val or 1e-4,
+                        lr_scheduler=lr_sched or "polynomial",
+                        warmup_ratio=warmup_val or 0.06,
+                    )
+                if result and result.get("status") == "training_started":
+                    for e in st.session_state.get("entities", []):
+                        if e["id"] == entity_id:
+                            e.update(result.get("entity", e))
+                            break
+                    st.session_state.pop(f"retrain_cropped_zip_{entity_id}", None)
+                    st.session_state.pop(f"retrain_cropped_filename_{entity_id}", None)
+                    st.toast("Retrain started")
+                    st.rerun()
+                else:
+                    err = result.get("error", "Unknown error") if isinstance(result, dict) else "Failed"
+                    st.error(f"Retrain failed: {err}")
+
+
+def _retrain_crop_dialog(images: list[tuple[str, Image.Image]], zip_name: str, entity_id: str) -> None:
+    """Crop dialog for retrain images. Saves to session state."""
+    from streamlit_cropper import st_cropper
+
+    prepared: list[tuple[str, bytes]] = []
+    for i, (fname, img) in enumerate(images):
+        st.caption(f"Image {i + 1}/{len(images)}: {fname}")
+        st.image(img, use_container_width=True)
+        col_rm, col_crop = st.columns(2)
+        with col_rm:
+            remove = st.checkbox("Remove", key=f"retrain_crop_rm_{entity_id}_{i}")
+        with col_crop:
+            use_crop = st.checkbox("Crop 1:1", key=f"retrain_crop_en_{entity_id}_{i}")
+        if remove:
+            st.divider()
+            continue
+        output_img = img
+        if use_crop:
+            preview_img = img.copy()
+            if preview_img.width > 360:
+                ratio = 360 / float(preview_img.width)
+                preview_img = preview_img.resize(
+                    (360, int(preview_img.height * ratio)),
+                    Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS,
+                )
+            rect = st_cropper(
+                preview_img,
+                realtime_update=True,
+                box_color="#7C3AED",
+                aspect_ratio=(1, 1),
+                return_type="box",
+                should_resize_image=False,
+                key=f"retrain_crop_{entity_id}_{i}",
+            )
+            if rect:
+                sx = img.width / float(preview_img.width)
+                sy = img.height / float(preview_img.height)
+                left = max(0, int(rect["left"] * sx))
+                top = max(0, int(rect["top"] * sy))
+                w = max(1, int(rect["width"] * sx))
+                h = max(1, int(rect["height"] * sy))
+                output_img = img.crop((left, top, min(img.width, left + w), min(img.height, top + h)))
+        buf = io.BytesIO()
+        output_img.save(buf, format="PNG")
+        prepared.append((fname, buf.getvalue()))
+        st.divider()
+
+    col_ok, col_cancel = st.columns(2)
+    with col_ok:
+        if st.button("Apply crops", key=f"retrain_crop_ok_{entity_id}"):
+            if not prepared:
+                st.error("Keep at least one image")
+                return
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for fname, png_bytes in prepared:
+                    zf.writestr(f"{Path(fname).stem}.png", png_bytes)
+            st.session_state[f"retrain_cropped_zip_{entity_id}"] = buf.getvalue()
+            st.session_state[f"retrain_cropped_filename_{entity_id}"] = zip_name or "cropped.zip"
+            st.session_state.pop(f"retrain_crop_data_{entity_id}", None)
+            st.toast("Images cropped. Click Retrain.")
+            st.rerun()
+    with col_cancel:
+        if st.button("Cancel", key=f"retrain_crop_cancel_{entity_id}"):
+            st.session_state.pop(f"retrain_crop_data_{entity_id}", None)
+            st.rerun()
 
 
 def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:

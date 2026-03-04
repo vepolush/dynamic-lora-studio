@@ -13,15 +13,23 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from captioning import CAPTION_MODES, CaptioningError, apply_caption_mode
-from dataset_prep import DatasetValidationError, prepare_entity_dataset
+from dataset_prep import (
+    DatasetValidationError,
+    add_images_from_zip,
+    prepare_entity_dataset,
+    remove_dataset_images,
+)
 from entity_store import (
     DATA_DIR,
     create_entity,
     delete_entity as store_delete_entity,
-    load_entity_preview_bytes,
+    entity_dataset_dir,
     get_entity as store_get_entity,
     get_entity_metadata,
+    list_dataset_images,
     list_entities as store_list_entities,
+    load_dataset_image_bytes,
+    load_entity_preview_bytes,
     update_entity_metadata,
 )
 from model_manager import ml_manager
@@ -116,6 +124,15 @@ class GenerateRequest(BaseModel):
     entity_id: str | None = None
     entity_version: str | None = None
     lora_strength: float = 0.8
+
+
+class UpdateEntityRequest(BaseModel):
+    name: str | None = None
+    trigger_word: str | None = None
+
+
+class RemoveDatasetRequest(BaseModel):
+    filenames: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +324,44 @@ def get_entity_preview(entity_id: str):
     return Response(content=data, media_type="image/png")
 
 
+@app.get("/api/entities/{entity_id}/dataset")
+def get_entity_dataset(entity_id: str):
+    entity = store_get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    images = list_dataset_images(entity_id)
+    return {"images": images}
+
+
+@app.get("/api/entities/{entity_id}/dataset/{filename:path}")
+def get_dataset_image(entity_id: str, filename: str):
+    entity = store_get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    data = load_dataset_image_bytes(entity_id, filename)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(content=data, media_type="image/png")
+
+
+@app.delete("/api/entities/{entity_id}/dataset")
+def remove_entity_dataset_images(entity_id: str, req: RemoveDatasetRequest):
+    entity = store_get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    entity_dir = Path(DATA_DIR) / "storage" / "entities" / entity_id
+    try:
+        result = remove_dataset_images(
+            entity_dir=entity_dir,
+            filenames=req.filenames,
+            entity_id=entity_id,
+        )
+    except DatasetValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    update_entity_metadata(entity_id, {"image_count": result["total"]})
+    return result
+
+
 @app.post("/api/entities")
 def upload_entity(
     name: str = Form(...),
@@ -472,6 +527,191 @@ def upload_entity(
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+@app.post("/api/entities/{entity_id}/retrain")
+def retrain_entity(
+    entity_id: str,
+    training_profile: str = Form("balanced"),
+    caption_mode: str = Form("auto"),
+    use_custom: str = Form("false"),
+    steps: int = Form(1200),
+    rank: int = Form(16),
+    learning_rate: float = Form(1e-4),
+    lr_scheduler: str = Form("polynomial"),
+    warmup_ratio: float = Form(0.06),
+    remove_filenames: str = Form("[]"),
+    file: UploadFile | None = File(None),
+):
+    entity = store_get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if entity.get("status") in ("queued", "training"):
+        raise HTTPException(
+            status_code=400,
+            detail="Entity is already training. Wait for completion.",
+        )
+
+    trigger_word = str(entity.get("trigger_word", "")).strip()
+    if not trigger_word:
+        raise HTTPException(status_code=400, detail="Entity has no trigger word")
+
+    entity_dir = Path(DATA_DIR) / "storage" / "entities" / entity_id
+    tmp_dir = Path(DATA_DIR) / "tmp" / "uploads"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    zip_path: Path | None = None
+
+    try:
+        import json as _json
+        to_remove: list[str] = []
+        try:
+            to_remove = _json.loads(remove_filenames or "[]")
+        except (_json.JSONDecodeError, TypeError):
+            pass
+        if not isinstance(to_remove, list):
+            to_remove = []
+
+        if to_remove:
+            remove_result = remove_dataset_images(
+                entity_dir=entity_dir,
+                filenames=to_remove,
+                entity_id=entity_id,
+            )
+            update_entity_metadata(entity_id, {"image_count": remove_result["total"]})
+
+        if file and file.filename and file.filename.lower().endswith(".zip"):
+            tmp_path = tmp_dir / f"retrain_{new_message_id()}.zip"
+            file_bytes = file.file.read()
+            if file_bytes:
+                with open(tmp_path, "wb") as f:
+                    f.write(file_bytes)
+                zip_path = tmp_path
+                add_result = add_images_from_zip(
+                    entity_dir=entity_dir,
+                    zip_path=zip_path,
+                    entity_id=entity_id,
+                )
+                update_entity_metadata(entity_id, {"image_count": add_result["total"]})
+
+        use_custom_bool = str(use_custom).strip().lower() in ("1", "true", "yes")
+        if use_custom_bool:
+            profile_key = "custom"
+            steps_val = max(100, min(5000, steps))
+            rank_val = max(4, min(64, rank))
+            lr_val = max(1e-6, min(1e-2, learning_rate))
+            lr_sched = str(lr_scheduler or "polynomial").strip().lower()
+            warmup_val = max(0.0, min(0.25, warmup_ratio))
+        else:
+            profile_key = training_profile.strip().lower()
+            if profile_key not in TRAINING_PROFILES:
+                profile_key = "balanced"
+            steps_val = TRAINING_PROFILES[profile_key]["steps"]
+            rank_val = TRAINING_PROFILES[profile_key]["rank"]
+            lr_val = TRAINING_PROFILES[profile_key]["learning_rate"]
+            lr_sched = TRAINING_PROFILES[profile_key]["lr_scheduler"]
+            warmup_val = TRAINING_PROFILES[profile_key]["warmup_ratio"]
+
+        caption_mode_key = caption_mode.strip().lower()
+        if caption_mode_key not in CAPTION_MODES:
+            caption_mode_key = "auto"
+
+        zip_for_caption = zip_path
+        if not zip_for_caption:
+            raw_meta = get_entity_metadata(entity_id) or {}
+            saved = raw_meta.get("uploaded_zip_path")
+            if saved and Path(saved).exists():
+                zip_for_caption = Path(saved)
+
+        if zip_for_caption:
+            try:
+                apply_caption_mode(
+                    entity_dir=entity_dir,
+                    zip_path=zip_for_caption,
+                    trigger_word=trigger_word,
+                    caption_mode=caption_mode_key,
+                )
+            except CaptioningError as e:
+                update_entity_metadata(entity_id, {"status": "failed", "error": str(e)})
+                raise HTTPException(status_code=400, detail=str(e)) from e
+
+        update_entity_metadata(
+            entity_id,
+            {
+                "caption_mode": caption_mode_key,
+                "image_count": len(list_dataset_images(entity_id)),
+            },
+        )
+
+        queue_info = training_queue.enqueue(
+            entity_id=entity_id,
+            trigger_word=trigger_word,
+            steps=steps_val,
+            rank=rank_val,
+            learning_rate=lr_val,
+            lr_scheduler=lr_sched,
+            warmup_ratio=warmup_val,
+        )
+
+        started_entity = update_entity_metadata(
+            entity_id,
+            {
+                "status": "queued",
+                "training_job_id": queue_info["job_id"],
+                "training_profile": profile_key,
+                "training_params": {
+                    "steps": steps_val,
+                    "rank": rank_val,
+                    "learning_rate": lr_val,
+                    "lr_scheduler": lr_sched,
+                    "warmup_ratio": warmup_val,
+                },
+                "error": None,
+            },
+        )
+
+        return {
+            "status": "training_started",
+            "job_id": queue_info["job_id"],
+            "entity": started_entity,
+        }
+    except HTTPException:
+        raise
+    except DatasetValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        print(f"Retrain error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        if zip_path and zip_path.exists():
+            zip_path.unlink(missing_ok=True)
+
+
+@app.put("/api/entities/{entity_id}")
+def update_entity(entity_id: str, req: UpdateEntityRequest):
+    entity = store_get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    updates: dict[str, Any] = {}
+    if req.name is not None:
+        clean_name = req.name.strip()
+        if not clean_name:
+            raise HTTPException(status_code=400, detail="Field 'name' cannot be empty")
+        updates["name"] = clean_name
+    if req.trigger_word is not None:
+        clean_trigger = req.trigger_word.strip()
+        if not clean_trigger:
+            raise HTTPException(status_code=400, detail="Field 'trigger_word' cannot be empty")
+        updates["trigger_word"] = clean_trigger
+
+    if not updates:
+        return entity
+
+    result = update_entity_metadata(entity_id, updates)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return result
 
 
 @app.delete("/api/entities/{entity_id}")
