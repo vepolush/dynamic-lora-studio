@@ -118,7 +118,6 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_entities(user_id: str | None = None) -> list[dict[str, Any]]:
-    """List entities. If user_id given, return only that user's + legacy. Else only legacy."""
     _ensure_root()
     init_db()
     entities: list[dict[str, Any]] = []
@@ -140,7 +139,6 @@ def list_entities(user_id: str | None = None) -> list[dict[str, Any]]:
 
 
 def get_entity(entity_id: str, user_id: str | None = None) -> dict[str, Any] | None:
-    """Get entity. If user_id given, return if user owns or legacy. If no user, only legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(EntityModel, entity_id)
@@ -151,7 +149,7 @@ def get_entity(entity_id: str, user_id: str | None = None) -> dict[str, Any] | N
                 return None
         else:
             if row.user_id is not None:
-                return None  # Anonymous: only legacy entities
+                return None
         if not _entity_dir(entity_id).exists():
             return None
         meta = _entity_to_dict(row)
@@ -210,7 +208,6 @@ def update_entity_metadata(
     updates: dict[str, Any],
     user_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Update entity. If user_id given, only allow if user owns it or entity is legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(EntityModel, entity_id)
@@ -320,7 +317,6 @@ def create_entity_from_weights(
 
 
 def delete_entity(entity_id: str, user_id: str | None = None) -> bool:
-    """Delete entity. If user_id given, only allow if user owns it or entity is legacy."""
     init_db()
     entity_dir = _entity_dir(entity_id)
     with session_scope() as session:

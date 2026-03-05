@@ -60,11 +60,11 @@ def create_session(
         "created_at": now,
         "messages": [],
         "favourite": False,
+        "archived": False,
     }
 
 
 def get_session(session_id: str, user_id: str | None = None) -> dict[str, Any] | None:
-    """Get session. If user_id given, return if user owns it or legacy. If no user, only legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(SessionModel, session_id)
@@ -80,7 +80,6 @@ def get_session(session_id: str, user_id: str | None = None) -> dict[str, Any] |
 
 
 def list_sessions(user_id: str | None = None) -> list[dict[str, Any]]:
-    """List sessions. If user_id given, return only that user's sessions + legacy (null)."""
     _ensure_dirs()
     init_db()
     sessions: list[dict[str, Any]] = []
@@ -105,6 +104,7 @@ def list_sessions(user_id: str | None = None) -> list[dict[str, Any]]:
                 "message_count": msg_count,
                 "favourite": row.favourite,
                 "favourite_image_filenames": fav_filenames,
+                "archived": getattr(row, "archived", False),
                 "last_prompt": last_prompt,
             })
     return sessions
@@ -115,7 +115,6 @@ def update_session(
     updates: dict[str, Any],
     user_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Update session. If user_id given, only allow if user owns it or session is legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(SessionModel, session_id)
@@ -132,11 +131,12 @@ def update_session(
                 updates["favourite_image_filenames"],
                 ensure_ascii=False,
             )
+        if "archived" in updates:
+            row.archived = bool(updates["archived"])
         return row.to_dict()
 
 
 def delete_session(session_id: str, user_id: str | None = None) -> bool:
-    """Delete session. If user_id given, only allow if user owns it or session is legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(SessionModel, session_id)

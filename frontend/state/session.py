@@ -90,6 +90,8 @@ SCHEDULER_MAP: dict[str, str] = {
 
 def init_session_state() -> None:
     """Populate st.session_state with defaults if keys are missing."""
+    from services.auth_service import is_logged_in
+
     if "sessions" not in st.session_state or "entities" not in st.session_state:
         with st.spinner("Loading..."):
             if "sessions" not in st.session_state:
@@ -100,8 +102,12 @@ def init_session_state() -> None:
                 entities = get_entities()
                 st.session_state["entities"] = entities if entities is not None else []
 
+    if is_logged_in():
+        from services.session_service import get_sessions
+        st.session_state["sessions"] = get_sessions()
+
     sessions = st.session_state["sessions"]
-    if not sessions:
+    if not sessions and is_logged_in():
         from services.session_service import create_session
         new_sess = create_session("New session")
         if new_sess:
@@ -133,6 +139,13 @@ def get_active_session() -> dict | None:
     return None
 
 
+def get_archived_count() -> int:
+    """Count sessions where archived=True."""
+    from services.session_service import get_sessions
+    sessions = get_sessions()
+    return sum(1 for s in sessions if s.get("archived") is True)
+
+
 def get_session_messages(session_id: str) -> list[dict]:
     """Get messages for a session from local state, loading from backend if needed."""
     chat_messages = st.session_state.get("chat_messages", {})
@@ -162,10 +175,10 @@ def add_chat_message(session_id: str, message: dict) -> None:
 
 
 def get_favourite_count() -> int:
-    """Count favourite images across all sessions."""
+    """Count sessions where favourite=True (not favourite_image_filenames)."""
     from services.session_service import get_sessions
     sessions = get_sessions()
-    return sum(len(s.get("favourite_image_filenames", [])) for s in sessions)
+    return sum(1 for s in sessions if s.get("favourite") is True)
 
 
 def format_session_date(iso_str: str) -> str:

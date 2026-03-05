@@ -80,6 +80,7 @@ class SessionModel(Base):
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     favourite: Mapped[bool] = mapped_column(Boolean, default=False)
     favourite_image_filenames: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
     messages: Mapped[list["MessageModel"]] = relationship(
         "MessageModel",
@@ -96,6 +97,7 @@ class SessionModel(Base):
             "created_at": self.created_at,
             "favourite": self.favourite,
             "favourite_image_filenames": _parse_json(self.favourite_image_filenames) or [],
+            "archived": self.archived,
             "messages": [m.to_dict() for m in self.messages],
         }
 
@@ -217,10 +219,23 @@ def get_db_engine():
     return _engine
 
 
+def _run_migrations(engine) -> None:
+    """Run schema migrations for existing databases."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN archived BOOLEAN DEFAULT 0"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            pass
+
+
 def init_db() -> None:
     """Create all tables if they don't exist."""
     engine = get_db_engine()
     Base.metadata.create_all(engine)
+    _run_migrations(engine)
 
 
 @contextmanager

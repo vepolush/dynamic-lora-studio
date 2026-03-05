@@ -25,6 +25,9 @@ from components.settings import render_settings  # noqa: E402
 from components.workspace import render_workspace  # noqa: E402
 from state.session import init_session_state  # noqa: E402
 
+from services.auth_service import _restore_token_from_cookie, is_logged_in  # noqa: E402
+
+_restore_token_from_cookie()
 init_session_state()
 
 render_sidebar()
@@ -38,8 +41,11 @@ elif current_page == "gallery":
 elif current_page == "settings":
     render_settings()
 else:
-    workspace_col, helper_col = st.columns([3, 1.3], gap="medium")
-    with workspace_col:
+    if is_logged_in():
+        workspace_col, helper_col = st.columns([3, 1.3], gap="medium")
+        with workspace_col:
+            render_workspace()
+        with helper_col:
+            render_prompt_helper()
+    else:
         render_workspace()
-    with helper_col:
-        render_prompt_helper()

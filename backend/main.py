@@ -55,6 +55,7 @@ from session_store import (
 from training_queue import training_queue
 from gallery_store import (
     get_gallery_image,
+    get_published_filenames_for_session,
     list_gallery,
     load_gallery_image_bytes,
     publish_image,
@@ -123,6 +124,7 @@ class UpdateSessionRequest(BaseModel):
     title: str | None = None
     favourite: bool | None = None
     favourite_image_filenames: list[str] | None = None
+    archived: bool | None = None
 
 
 class GenerateRequest(BaseModel):
@@ -296,6 +298,12 @@ def get_gallery_image_bytes(image_id: str):
     return Response(content=data, media_type="image/png")
 
 
+@app.get("/api/gallery/published-filenames")
+def get_published_filenames(session_id: str, user=Depends(get_current_user)):
+    """Return filenames from session that are already published to gallery."""
+    return {"filenames": list(get_published_filenames_for_session(session_id))}
+
+
 @app.post("/api/gallery/publish")
 def publish_to_gallery(req: PublishRequest, user=Depends(require_auth)):
     try:
@@ -308,6 +316,8 @@ def publish_to_gallery(req: PublishRequest, user=Depends(require_auth)):
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/gallery/{image_id}/like")
@@ -349,6 +359,8 @@ def update_session(session_id: str, req: UpdateSessionRequest, user=Depends(get_
         updates["favourite"] = req.favourite
     if req.favourite_image_filenames is not None:
         updates["favourite_image_filenames"] = req.favourite_image_filenames
+    if req.archived is not None:
+        updates["archived"] = req.archived
     result = store_update_session(session_id, updates, user_id=user["user_id"] if user else None)
     if result is None:
         raise HTTPException(status_code=404, detail="Session not found")

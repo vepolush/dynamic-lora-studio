@@ -348,6 +348,35 @@ header[data-testid="stHeader"] {
     margin-bottom: 0.6rem;
 }
 
+.session-header-actions {
+    display: flex;
+    gap: 0.35rem;
+    opacity: 0.4;
+    transition: opacity 0.2s ease;
+}
+
+.session-header-with-actions:hover .session-header-actions {
+    opacity: 1;
+}
+
+.session-action-btn {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    padding: 0.15rem 0.3rem;
+    border-radius: var(--radius-xs);
+    transition: color 0.15s, background 0.15s;
+}
+
+.session-action-btn:hover {
+    color: var(--accent-light);
+    background: var(--bg-hover);
+}
+
+.session-action-delete:hover {
+    color: var(--accent-pink);
+}
+
 .session-title {
     font-size: 0.82rem;
     color: var(--text-secondary);
@@ -1200,11 +1229,62 @@ header[data-testid="stHeader"] {
 /* ============================
    AUTH & GALLERY
    ============================ */
+.auth-user-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.auth-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+    flex-shrink: 0;
+}
+
 .auth-user {
     font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-bottom: 0.4rem;
     word-break: break-all;
+}
+
+.login-required-box {
+    text-align: center;
+    padding: 3rem 2rem;
+    background: rgba(124, 58, 237, 0.08);
+    border-radius: 12px;
+    border: 1px solid rgba(124, 58, 237, 0.2);
+}
+
+.login-required-icon {
+    font-size: 4rem;
+    margin-bottom: 0.5rem;
+}
+
+.login-required-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.4rem;
+}
+
+.login-required-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.4rem;
+}
+
+.login-required-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    opacity: 0.8;
 }
 
 /* Auth form: spacing for submit buttons */

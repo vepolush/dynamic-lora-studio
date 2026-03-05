@@ -46,20 +46,41 @@ def get_gallery_image_base64(image_id: str) -> str | None:
         return None
 
 
+def get_published_filenames(session_id: str) -> list[str]:
+    """Get filenames from session that are already published to gallery."""
+    if not BACKEND_ENABLED:
+        return []
+    try:
+        client = get_client()
+        return client.get_published_filenames(session_id)
+    except BackendError:
+        return []
+
+
 def publish_to_gallery(
     session_id: str,
     filename: str,
     prompt: str,
     settings: dict | None = None,
-) -> dict[str, Any] | None:
-    """Publish image to gallery. Requires auth. Returns gallery item or None."""
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Publish image to gallery. Requires auth. Returns (gallery_item, error_message)."""
     if not BACKEND_ENABLED:
-        return None
+        return None, "Backend not available"
     try:
         client = get_client()
-        return client.publish_to_gallery(session_id, filename, prompt, settings)
-    except BackendError:
-        return None
+        result = client.publish_to_gallery(session_id, filename, prompt, settings)
+        return result, None
+    except BackendError as e:
+        import json
+        msg = str(e)
+        if "Backend error:" in msg:
+            try:
+                rest = msg.split("Backend error:", 1)[1].strip()
+                data = json.loads(rest)
+                return None, data.get("detail", msg)
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+        return None, msg
 
 
 def like_gallery_image(image_id: str) -> dict[str, Any] | None:
@@ -121,20 +142,30 @@ def publish_lora_to_gallery(
     name: str,
     trigger_word: str,
     description: str | None = None,
-) -> dict[str, Any] | None:
-    """Publish LoRA to gallery. Requires auth. Returns gallery LoRA or None."""
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Publish LoRA to gallery. Returns (gallery_lora, error_message)."""
     if not BACKEND_ENABLED:
-        return None
+        return None, "Backend not available"
     try:
         client = get_client()
-        return client.publish_lora_to_gallery(
+        result = client.publish_lora_to_gallery(
             entity_id=entity_id,
             name=name,
             trigger_word=trigger_word,
             description=description,
         )
-    except BackendError:
-        return None
+        return result, None
+    except BackendError as e:
+        import json
+        msg = str(e)
+        if "Backend error:" in msg:
+            try:
+                rest = msg.split("Backend error:", 1)[1].strip()
+                data = json.loads(rest)
+                return None, data.get("detail", msg)
+            except (json.JSONDecodeError, IndexError, KeyError):
+                pass
+        return None, msg
 
 
 def add_gallery_lora(lora_id: str) -> dict[str, Any] | None:

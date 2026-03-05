@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from api.client import APIClient, BackendError
+from api.client import BackendError
 from config import BACKEND_ENABLED
+from services.auth_service import get_client
 
 
 def generate(
@@ -33,7 +34,7 @@ def generate(
         return None
 
     try:
-        client = APIClient()
+        client = get_client()
         return client.generate(
             session_id=session_id,
             prompt=prompt,

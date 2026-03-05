@@ -1,9 +1,10 @@
-"""Global gallery page — Images and LoRAs tabs, grid, Instagram-style popup."""
+"""Global gallery page — Images and LoRAs tabs, grid, overlay dialogs."""
 
 from __future__ import annotations
 
+import base64
 import html
-
+import json
 import streamlit as st
 
 from services.auth_service import is_logged_in
@@ -132,13 +133,9 @@ def _render_lora_thumb(lora: dict) -> None:
                     st.warning("Log in to add LoRA")
 
 
-def _render_lora_popup(lora_id: str) -> None:
-    """Render LoRA popup: preview left, details right."""
-    if st.button("✕ Close", key="gallery_lora_close_popup"):
-        st.session_state.pop("gallery_selected_lora_id", None)
-        st.rerun()
-
-    item = get_gallery_lora(lora_id)
+@st.dialog("Gallery LoRA")
+def _show_lora_dialog(lora_id: str) -> None:
+    """Show LoRA details as overlay dialog."""
     if not item:
         st.session_state.pop("gallery_selected_lora_id", None)
         st.rerun()
@@ -185,6 +182,15 @@ def _render_lora_popup(lora_id: str) -> None:
         else:
             st.caption("Log in to add LoRA")
 
+        if st.button("✕ Close", key="gallery_lora_close_popup"):
+            st.session_state.pop("gallery_selected_lora_id", None)
+            st.rerun()
+
+
+def _render_lora_popup(lora_id: str) -> None:
+    """Render LoRA as overlay dialog."""
+    _show_lora_dialog(lora_id)
+
 
 def _render_gallery_thumb(img: dict) -> None:
     """Render thumbnail with View and Like buttons."""
@@ -220,12 +226,9 @@ def _render_gallery_thumb(img: dict) -> None:
                 st.warning("Log in to like")
 
 
-def _render_gallery_popup(image_id: str) -> None:
-    """Render Instagram-style popup: image left, details right."""
-    if st.button("✕ Close", key="gallery_close_popup"):
-        st.session_state.pop("gallery_selected_id", None)
-        st.rerun()
-
+@st.dialog("Gallery Image")
+def _show_gallery_image_dialog(image_id: str) -> None:
+    """Show gallery image as overlay dialog."""
     item = get_gallery_image(image_id)
     if not item:
         st.session_state.pop("gallery_selected_id", None)
@@ -260,5 +263,28 @@ def _render_gallery_popup(image_id: str) -> None:
                 updated = like_gallery_image(image_id)
                 if updated:
                     st.rerun()
-        else:
-            st.caption("Log in to like")
+
+        if is_logged_in():
+            st.divider()
+            settings_for_apply = {"prompt": item.get("prompt", ""), **(settings or {})}
+            settings_b64 = base64.b64encode(json.dumps(settings_for_apply, ensure_ascii=False).encode()).decode()
+            if st.button("Create session with these settings", key="gallery_create_session_btn"):
+                from services.session_service import create_session
+                new_sess = create_session("New session")
+                if new_sess:
+                    st.session_state["sessions"] = [new_sess] + st.session_state.get("sessions", [])
+                    st.session_state["active_session_id"] = new_sess["id"]
+                    st.session_state["current_page"] = "generate"
+                    st.session_state.pop("gallery_selected_id", None)
+                    st.query_params["apply_settings_b64"] = settings_b64
+                    st.toast("Session created with settings applied")
+                    st.rerun()
+
+        if st.button("✕ Close", key="gallery_close_popup"):
+            st.session_state.pop("gallery_selected_id", None)
+            st.rerun()
+
+
+def _render_gallery_popup(image_id: str) -> None:
+    """Render gallery image as overlay dialog."""
+    _show_gallery_image_dialog(image_id)

@@ -33,6 +33,27 @@ def _settings_without_lora(settings: dict | None) -> dict | None:
     return {k: v for k, v in settings.items() if k not in exclude}
 
 
+def get_published_filenames_for_session(session_id: str) -> set[str]:
+    """Return set of filenames from this session that are already published."""
+    init_db()
+    with session_scope() as session:
+        rows = session.query(GalleryImageModel.filename).filter(
+            GalleryImageModel.session_id == session_id,
+        ).all()
+        return {r[0] for r in rows}
+
+
+def _is_image_already_published(session_id: str, filename: str) -> bool:
+    """Check if image (session_id+filename) is already published to gallery."""
+    init_db()
+    with session_scope() as session:
+        row = session.query(GalleryImageModel).filter(
+            GalleryImageModel.session_id == session_id,
+            GalleryImageModel.filename == filename,
+        ).first()
+        return row is not None
+
+
 def publish_image(
     user_id: str,
     session_id: str,
@@ -43,6 +64,9 @@ def publish_image(
     """Copy image to gallery and create record. Returns gallery image dict."""
     init_db()
     _ensure_gallery_dir()
+
+    if _is_image_already_published(session_id, filename):
+        raise ValueError("Image already published to gallery")
 
     src = IMAGES_DIR / session_id / filename
     if not src.exists():

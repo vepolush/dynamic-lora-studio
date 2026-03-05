@@ -5,8 +5,9 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from api.client import APIClient, BackendError
+from api.client import BackendError
 from config import BACKEND_ENABLED
+from services.auth_service import get_client
 from state.session import MOCK_ENTITIES
 
 
@@ -15,7 +16,7 @@ def get_entity_preview_base64(entity_id: str) -> str | None:
     if not BACKEND_ENABLED:
         return None
     try:
-        client = APIClient()
+        client = get_client()
         data = client.get_entity_preview_bytes(entity_id)
         if not data:
             return None
@@ -30,7 +31,7 @@ def get_entities() -> list[dict[str, Any]] | None:
         return MOCK_ENTITIES.copy()
 
     try:
-        client = APIClient()
+        client = get_client()
         return client.get_entities()
     except BackendError:
         return None
@@ -49,7 +50,7 @@ def upload_entity(
         return None
 
     try:
-        client = APIClient()
+        client = get_client()
         return client.upload_entity(
             name=name,
             trigger_word=trigger_word,
@@ -75,7 +76,7 @@ def update_entity(
         return None
 
     try:
-        client = APIClient()
+        client = get_client()
         return client.update_entity(
             entity_id,
             name=name,
@@ -90,7 +91,7 @@ def get_entity_dataset(entity_id: str) -> list[dict[str, Any]] | None:
     if not BACKEND_ENABLED:
         return []
     try:
-        client = APIClient()
+        client = get_client()
         return client.get_entity_dataset(entity_id)
     except BackendError:
         return None
@@ -101,7 +102,7 @@ def get_dataset_image_base64(entity_id: str, filename: str) -> str | None:
     if not BACKEND_ENABLED:
         return None
     try:
-        client = APIClient()
+        client = get_client()
         data = client.get_dataset_image_bytes(entity_id, filename)
         if not data:
             return None
@@ -115,7 +116,7 @@ def remove_dataset_images(entity_id: str, filenames: list[str]) -> dict[str, Any
     if not BACKEND_ENABLED:
         return None
     try:
-        client = APIClient()
+        client = get_client()
         return client.remove_dataset_images(entity_id, filenames)
     except BackendError:
         return None
@@ -140,7 +141,7 @@ def retrain_entity(
     if not BACKEND_ENABLED:
         return None
     try:
-        client = APIClient()
+        client = get_client()
         return client.retrain_entity(
             entity_id,
             zip_bytes=zip_bytes,
@@ -165,7 +166,7 @@ def delete_entity(entity_id: str) -> bool:
         return False
 
     try:
-        client = APIClient()
+        client = get_client()
         client.delete_entity(entity_id)
         return True
     except BackendError:

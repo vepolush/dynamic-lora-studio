@@ -115,6 +115,11 @@ class APIClient:
     def get_gallery_image_bytes(self, image_id: str) -> bytes | None:
         return self._get_bytes(f"/api/gallery/{image_id}/image", timeout=QUICK_TIMEOUT)
 
+    def get_published_filenames(self, session_id: str) -> list[str]:
+        """Get filenames from session that are already published to gallery."""
+        data = self._request("GET", f"/api/gallery/published-filenames?session_id={session_id}", timeout=QUICK_TIMEOUT)
+        return data.get("filenames", []) if isinstance(data, dict) else []
+
     def publish_to_gallery(self, session_id: str, filename: str, prompt: str, settings: dict | None = None) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -196,6 +201,7 @@ class APIClient:
         title: str | None = None,
         favourite: bool | None = None,
         favourite_image_filenames: list[str] | None = None,
+        archived: bool | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {}
         if title is not None:
@@ -204,6 +210,8 @@ class APIClient:
             payload["favourite"] = favourite
         if favourite_image_filenames is not None:
             payload["favourite_image_filenames"] = favourite_image_filenames
+        if archived is not None:
+            payload["archived"] = archived
         return self._request("PUT", f"/api/sessions/{session_id}", json=payload, timeout=QUICK_TIMEOUT)  # type: ignore
 
     def delete_session(self, session_id: str) -> None:

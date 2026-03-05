@@ -20,6 +20,19 @@ from state.session import (
 )
 
 
+def _render_login_required() -> None:
+    """Show login prompt when user is not authenticated."""
+    st.markdown(
+        '<div class="login-required-box">'
+        '<div class="login-required-icon">🔐</div>'
+        '<div class="login-required-title">Log in to continue</div>'
+        '<div class="login-required-text">Create sessions, generate images, and manage your LoRAs.</div>'
+        '<div class="login-required-hint">Use the form in the sidebar to log in or register.</div>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_no_session() -> None:
     st.info("No sessions. Creating one...")
     if st.button("+ New Session", key="workspace_new_session", type="primary"):
@@ -114,9 +127,54 @@ def _apply_settings_from_query() -> None:
         st.rerun()
 
 
+def _handle_session_action_from_query() -> bool:
+    """Handle session_action from query params (fav, arch, del). Returns True if handled."""
+    action = st.query_params.get("session_action")
+    sid = st.query_params.get("session_id")
+    if not action or not sid:
+        return False
+    from services.session_service import delete_session, get_sessions, update_session
+
+    handled = False
+    if action == "fav":
+        sessions = [s for s in st.session_state.get("sessions", []) if s["id"] == sid]
+        if sessions and update_session(sid, favourite=not sessions[0].get("favourite", False)):
+            handled = True
+    elif action == "arch":
+        sessions = [s for s in st.session_state.get("sessions", []) if s["id"] == sid]
+        if sessions and update_session(sid, archived=not sessions[0].get("archived", False)):
+            handled = True
+    elif action == "del":
+        if delete_session(sid):
+            sessions = [s for s in st.session_state.get("sessions", []) if s["id"] != sid]
+            st.session_state["sessions"] = sessions
+            if st.session_state.get("active_session_id") == sid and sessions:
+                st.session_state["active_session_id"] = sessions[0]["id"]
+            elif st.session_state.get("active_session_id") == sid:
+                st.session_state["active_session_id"] = None
+            st.toast("Session deleted")
+            handled = True
+
+    if handled:
+        st.session_state["sessions"] = get_sessions()
+        for key in ("session_action", "session_id"):
+            if key in st.query_params:
+                del st.query_params[key]
+        st.rerun()
+    return handled
+
+
 def render_workspace() -> None:
+    from services.auth_service import is_logged_in
+
     _apply_settings_from_query()
+    if _handle_session_action_from_query():
+        return
     st.markdown(f'<div class="stars-layer">{_STARS_HTML}</div>', unsafe_allow_html=True)
+
+    if not is_logged_in():
+        _render_login_required()
+        return
 
     session = get_active_session()
     if session is None:
@@ -129,13 +187,27 @@ def render_workspace() -> None:
 
 
 def _render_session_header(session: dict) -> None:
+    from urllib.parse import urlencode
+
     date_str = format_session_date(session["created_at"])
     msg_count = session.get("message_count", 0)
     count_label = f" · {msg_count} generation(s)" if msg_count else ""
+    sid = session["id"]
+    is_fav = session.get("favourite", False)
+    is_archived = session.get("archived", False)
+
+    def _action_url(action: str) -> str:
+        q = {"session_action": action, "session_id": sid}
+        return "?" + urlencode(q)
+
     st.markdown(
-        f'<div class="session-header">'
+        f'<div class="session-header session-header-with-actions">'
         f'<div class="session-title"><strong>{session["title"]}</strong> · {date_str}{count_label}</div>'
-        f"</div>",
+        f'<div class="session-header-actions">'
+        f'<a href="{_action_url("fav")}" class="session-action-btn" title="Favourite">{"★" if is_fav else "☆"}</a>'
+        f'<a href="{_action_url("arch")}" class="session-action-btn" title="Archive">{"📦" if is_archived else "📁"}</a>'
+        f'<a href="{_action_url("del")}" class="session-action-btn session-action-delete" title="Delete">🗑</a>'
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -267,11 +339,12 @@ def _render_message_images(
 ) -> None:
     """Render images from base64 data or by fetching from backend when missing."""
     from services.auth_service import is_logged_in
-    from services.gallery_service import publish_to_gallery
+    from services.gallery_service import get_published_filenames, publish_to_gallery
     from services.session_service import get_session, get_session_image_base64, update_session
 
     full_session = get_session(session_id)
     fav_filenames = set(full_session.get("favourite_image_filenames", [])) if full_session else set()
+    published_filenames = set(get_published_filenames(session_id))
 
     n = len(images)
     cols_count = min(n, 2) if n <= 4 else 2
@@ -318,9 +391,10 @@ def _render_message_images(
                             if update_session(session_id, favourite_image_filenames=new_fav):
                                 st.rerun()
                     with btn_col2:
-                        if st.button("Publish", key=f"pub_img_{key_safe}", help="Publish to gallery"):
+                        is_published = filename in published_filenames
+                        if not is_published and st.button("Publish", key=f"pub_img_{key_safe}", help="Publish to gallery"):
                             if is_logged_in():
-                                result = publish_to_gallery(
+                                result, err = publish_to_gallery(
                                     session_id,
                                     filename,
                                     prompt=prompt,
@@ -330,7 +404,7 @@ def _render_message_images(
                                     st.toast("Published to gallery!")
                                     st.rerun()
                                 else:
-                                    st.error("Failed to publish")
+                                    st.error(err or "Failed to publish")
                             else:
                                 st.warning("Log in to publish")
                 st.markdown("</div>", unsafe_allow_html=True)

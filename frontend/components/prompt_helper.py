@@ -196,7 +196,7 @@ def _render_publish_lora_section(active_entity: dict) -> None:
             if not name_val or not trigger_val:
                 st.error("Name and trigger word required")
             else:
-                result = publish_lora_to_gallery(
+                result, err = publish_lora_to_gallery(
                     entity_id=active_entity["id"],
                     name=name_val,
                     trigger_word=trigger_val,
@@ -206,7 +206,7 @@ def _render_publish_lora_section(active_entity: dict) -> None:
                     st.toast("LoRA published to gallery!")
                     st.rerun()
                 else:
-                    st.error("Failed to publish. Check if already published or backend.")
+                    st.error(err or "Failed to publish. Check if already published or backend.")
 
 
 def _render_retrain_section(active_entity: dict) -> None:

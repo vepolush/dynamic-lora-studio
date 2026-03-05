@@ -7,11 +7,33 @@ import streamlit as st
 from services.auth_service import get_user_email, is_logged_in, login, logout, register
 
 
+def _avatar_letter(username: str) -> str:
+    """First letter of username for avatar, uppercase."""
+    return (username[0] if username else "?").upper()
+
+
+def _avatar_color(username: str) -> str:
+    """Consistent color from username."""
+    colors = [
+        "#7C3AED", "#2563EB", "#059669", "#D97706",
+        "#DC2626", "#DB2777", "#4F46E5", "#0D9488",
+    ]
+    return colors[hash(username) % len(colors)]
+
+
 def render_auth_sidebar() -> None:
     """Render auth section in sidebar: login/register or user + logout."""
     if is_logged_in():
-        username = get_user_email() or "User"  # get_user_email returns username for display
-        st.markdown(f'<div class="auth-user">{username}</div>', unsafe_allow_html=True)
+        username = get_user_email() or "User"
+        letter = _avatar_letter(username)
+        color = _avatar_color(username)
+        st.markdown(
+            f'<div class="auth-user-row">'
+            f'<div class="auth-avatar" style="background-color:{color}">{letter}</div>'
+            f'<div class="auth-user">{username}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
         if st.button("Logout", key="auth_logout", use_container_width=True):
             logout()
             st.rerun()
