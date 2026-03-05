@@ -126,7 +126,7 @@ def list_gallery(
         result = []
         for row in rows:
             user = session.get(UserModel, row.user_id)
-            author = user.email if user else ""
+            author = user.username if user else ""
             result.append(_gallery_image_to_dict(
                 row.id,
                 row.user_id,
@@ -170,7 +170,7 @@ def get_gallery_image(
             json.loads(row.settings) if row.settings else None,
             row.likes_count,
             row.published_at,
-            author_email=user.email if user else "",
+            author_email=user.username if user else "",
             liked=liked,
         )
 
@@ -215,6 +215,6 @@ def toggle_like(image_id: str, user_id: str) -> dict[str, Any] | None:
             json.loads(row.settings) if row.settings else None,
             row.likes_count,
             row.published_at,
-            author_email=user.email if user else "",
+            author_email=user.username if user else "",
             liked=liked,
         )

@@ -147,7 +147,7 @@ def list_gallery_loras(
                 row.description,
                 row.add_count,
                 row.published_at,
-                author_email=user.email if user else "",
+                author_email=user.username if user else "",
                 is_mine=current_user_id == row.user_id if current_user_id else False,
             ))
         return result
@@ -173,7 +173,7 @@ def get_gallery_lora(
             row.description,
             row.add_count,
             row.published_at,
-            author_email=user.email if user else "",
+            author_email=user.username if user else "",
             is_mine=current_user_id == row.user_id if current_user_id else False,
         )
 
@@ -191,6 +191,7 @@ def add_gallery_lora(lora_id: str, user_id: str) -> dict[str, Any]:
             name=row.name,
             trigger_word=row.trigger_word,
             source_weights_dir=_gallery_lora_dir(lora_id),
+            user_id=user_id,
         )
         row.add_count += 1
 

@@ -35,8 +35,13 @@ def is_logged_in() -> bool:
 
 
 def get_user_email() -> str | None:
-    """Get current user email from session state."""
-    return st.session_state.get("auth_user_email")
+    """Get current user display name (username) from session state."""
+    return st.session_state.get("auth_user_username")
+
+
+def get_user_username() -> str | None:
+    """Get current user username from session state."""
+    return st.session_state.get("auth_user_username")
 
 
 def get_client() -> APIClient:
@@ -44,30 +49,30 @@ def get_client() -> APIClient:
     return APIClient(token=get_token())
 
 
-def register(email: str, password: str) -> tuple[dict[str, Any] | None, str | None]:
+def register(username: str, password: str) -> tuple[dict[str, Any] | None, str | None]:
     """Register and store token. Returns (user_dict, error_message)."""
     if not BACKEND_ENABLED:
         return None, "Backend not available"
     try:
         client = APIClient()
-        data = client.register(email, password)
+        data = client.register(username, password)
         st.session_state["auth_token"] = data.get("token")
-        st.session_state["auth_user_email"] = data.get("email")
+        st.session_state["auth_user_username"] = data.get("username")
         st.session_state["auth_user_id"] = data.get("user_id")
         return data, None
     except BackendError as e:
         return None, _extract_detail(e)
 
 
-def login(email: str, password: str) -> tuple[dict[str, Any] | None, str | None]:
+def login(username: str, password: str) -> tuple[dict[str, Any] | None, str | None]:
     """Login and store token. Returns (user_dict, error_message)."""
     if not BACKEND_ENABLED:
         return None, "Backend not available"
     try:
         client = APIClient()
-        data = client.login(email, password)
+        data = client.login(username, password)
         st.session_state["auth_token"] = data.get("token")
-        st.session_state["auth_user_email"] = data.get("email")
+        st.session_state["auth_user_username"] = data.get("username")
         st.session_state["auth_user_id"] = data.get("user_id")
         return data, None
     except BackendError as e:
@@ -76,6 +81,6 @@ def login(email: str, password: str) -> tuple[dict[str, Any] | None, str | None]
 
 def logout() -> None:
     """Clear auth state."""
-    for key in ("auth_token", "auth_user_email", "auth_user_id"):
+    for key in ("auth_token", "auth_user_username", "auth_user_id"):
         if key in st.session_state:
             del st.session_state[key]

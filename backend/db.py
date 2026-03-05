@@ -30,6 +30,7 @@ class EntityModel(Base):
     __tablename__ = "entities"
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     trigger_word: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="queued")
@@ -74,6 +75,7 @@ class SessionModel(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     favourite: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -104,7 +106,7 @@ class UserModel(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    email: Mapped[str] = mapped_column(String(256), unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
 

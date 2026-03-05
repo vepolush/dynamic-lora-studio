@@ -117,16 +117,19 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def list_entities() -> list[dict[str, Any]]:
+def list_entities(user_id: str | None = None) -> list[dict[str, Any]]:
+    """List entities. If user_id given, return only that user's + legacy. Else only legacy."""
     _ensure_root()
     init_db()
     entities: list[dict[str, Any]] = []
     with session_scope() as session:
-        rows = (
-            session.query(EntityModel)
-            .order_by(EntityModel.created_at.desc())
-            .all()
-        )
+        from sqlalchemy import or_
+        q = session.query(EntityModel).order_by(EntityModel.created_at.desc())
+        if user_id is not None:
+            q = q.filter(or_(EntityModel.user_id == user_id, EntityModel.user_id.is_(None)))
+        else:
+            q = q.filter(EntityModel.user_id.is_(None))
+        rows = q.all()
         for row in rows:
             if not _entity_dir(row.id).exists():
                 continue
@@ -136,12 +139,19 @@ def list_entities() -> list[dict[str, Any]]:
     return entities
 
 
-def get_entity(entity_id: str) -> dict[str, Any] | None:
+def get_entity(entity_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    """Get entity. If user_id given, return if user owns or legacy. If no user, only legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(EntityModel, entity_id)
         if row is None:
             return None
+        if user_id is not None:
+            if row.user_id is not None and row.user_id != user_id:
+                return None
+        else:
+            if row.user_id is not None:
+                return None  # Anonymous: only legacy entities
         if not _entity_dir(entity_id).exists():
             return None
         meta = _entity_to_dict(row)
@@ -195,11 +205,18 @@ def load_dataset_image_bytes(entity_id: str, filename: str) -> bytes | None:
         return None
 
 
-def update_entity_metadata(entity_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+def update_entity_metadata(
+    entity_id: str,
+    updates: dict[str, Any],
+    user_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Update entity. If user_id given, only allow if user owns it or entity is legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(EntityModel, entity_id)
         if row is None:
+            return None
+        if user_id is not None and row.user_id is not None and row.user_id != user_id:
             return None
 
         json_fields = ("training_params", "caption_stats")
@@ -222,6 +239,7 @@ def create_entity(
     trigger_word: str,
     uploaded_filename: str,
     temp_zip_path: Path,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     _ensure_root()
     init_db()
@@ -243,6 +261,7 @@ def create_entity(
     with session_scope() as session:
         entity = EntityModel(
             id=entity_id,
+            user_id=user_id,
             name=name,
             trigger_word=trigger_word,
             status="queued",
@@ -261,6 +280,7 @@ def create_entity_from_weights(
     name: str,
     trigger_word: str,
     source_weights_dir: Path,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Create entity from copied LoRA weights (e.g. from gallery). No dataset."""
     _ensure_root()
@@ -285,6 +305,7 @@ def create_entity_from_weights(
     with session_scope() as session:
         entity = EntityModel(
             id=entity_id,
+            user_id=user_id,
             name=name,
             trigger_word=trigger_word,
             status="ready",
@@ -298,12 +319,15 @@ def create_entity_from_weights(
     return _normalize_entity(meta) if meta else {"id": entity_id, "name": name, "trigger_word": trigger_word}
 
 
-def delete_entity(entity_id: str) -> bool:
+def delete_entity(entity_id: str, user_id: str | None = None) -> bool:
+    """Delete entity. If user_id given, only allow if user owns it or entity is legacy."""
     init_db()
     entity_dir = _entity_dir(entity_id)
     with session_scope() as session:
         row = session.get(EntityModel, entity_id)
         if row is None:
+            return False
+        if user_id is not None and row.user_id is not None and row.user_id != user_id:
             return False
         session.delete(row)
     if entity_dir.exists():

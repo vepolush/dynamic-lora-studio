@@ -1207,6 +1207,11 @@ header[data-testid="stHeader"] {
     word-break: break-all;
 }
 
+/* Auth form: spacing for submit buttons */
+[data-testid="stSidebar"] form[data-testid="stForm"] .stButton > button {
+    margin-top: 1rem;
+}
+
 .gallery-prompt {
     max-height: 120px;
     overflow-y: auto;

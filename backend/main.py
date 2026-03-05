@@ -155,12 +155,12 @@ class RemoveDatasetRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    email: str
+    username: str
     password: str
 
 
 class LoginRequest(BaseModel):
-    email: str
+    username: str
     password: str
 
 
@@ -194,12 +194,12 @@ def health_check():
 
 @app.post("/api/auth/register")
 def register(req: RegisterRequest):
-    return auth_register(req.email, req.password)
+    return auth_register(req.username, req.password)
 
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
-    return auth_login(req.email, req.password)
+    return auth_login(req.username, req.password)
 
 
 # ---------------------------------------------------------------------------
@@ -323,25 +323,25 @@ def like_gallery_image(image_id: str, user=Depends(require_auth)):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/sessions")
-def get_sessions():
-    return {"sessions": store_list_sessions()}
+def get_sessions(user=Depends(get_current_user)):
+    return {"sessions": store_list_sessions(user_id=user["user_id"] if user else None)}
 
 
 @app.post("/api/sessions")
-def create_session(req: CreateSessionRequest):
-    return store_create_session(title=req.title)
+def create_session(req: CreateSessionRequest, user=Depends(require_auth)):
+    return store_create_session(title=req.title, user_id=user["user_id"])
 
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str):
-    session = store_get_session(session_id)
+def get_session(session_id: str, user=Depends(get_current_user)):
+    session = store_get_session(session_id, user_id=user["user_id"] if user else None)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
 
 
 @app.put("/api/sessions/{session_id}")
-def update_session(session_id: str, req: UpdateSessionRequest):
+def update_session(session_id: str, req: UpdateSessionRequest, user=Depends(get_current_user)):
     updates: dict[str, Any] = {}
     if req.title is not None:
         updates["title"] = req.title
@@ -349,15 +349,15 @@ def update_session(session_id: str, req: UpdateSessionRequest):
         updates["favourite"] = req.favourite
     if req.favourite_image_filenames is not None:
         updates["favourite_image_filenames"] = req.favourite_image_filenames
-    result = store_update_session(session_id, updates)
+    result = store_update_session(session_id, updates, user_id=user["user_id"] if user else None)
     if result is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return result
 
 
 @app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str):
-    if not store_delete_session(session_id):
+def delete_session(session_id: str, user=Depends(get_current_user)):
+    if not store_delete_session(session_id, user_id=user["user_id"] if user else None):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "deleted"}
 
@@ -379,9 +379,13 @@ def get_image(session_id: str, filename: str):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/generate")
-def generate_image(req: GenerateRequest):
+def generate_image(req: GenerateRequest, user=Depends(get_current_user)):
     if ml_manager.pipe is None:
         raise HTTPException(status_code=503, detail="Model is still loading or failed to load")
+
+    session = store_get_session(req.session_id, user_id=user["user_id"] if user else None)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
     try:
         enhanced_prompt = build_enhanced_prompt(
@@ -477,20 +481,23 @@ def generate_image(req: GenerateRequest):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/entities")
-def get_entities():
-    return {"entities": store_list_entities()}
+def get_entities(user=Depends(get_current_user)):
+    return {"entities": store_list_entities(user_id=user["user_id"] if user else None)}
 
 
 @app.get("/api/entities/{entity_id}")
-def get_entity(entity_id: str):
-    entity = store_get_entity(entity_id)
+def get_entity(entity_id: str, user=Depends(get_current_user)):
+    entity = store_get_entity(entity_id, user_id=user["user_id"] if user else None)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     return entity
 
 
 @app.get("/api/entities/{entity_id}/preview")
-def get_entity_preview(entity_id: str):
+def get_entity_preview(entity_id: str, user=Depends(get_current_user)):
+    entity = store_get_entity(entity_id, user_id=user["user_id"] if user else None)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
     data = load_entity_preview_bytes(entity_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Entity preview not found")
@@ -498,8 +505,8 @@ def get_entity_preview(entity_id: str):
 
 
 @app.get("/api/entities/{entity_id}/dataset")
-def get_entity_dataset(entity_id: str):
-    entity = store_get_entity(entity_id)
+def get_entity_dataset(entity_id: str, user=Depends(get_current_user)):
+    entity = store_get_entity(entity_id, user_id=user["user_id"] if user else None)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     images = list_dataset_images(entity_id)
@@ -507,8 +514,8 @@ def get_entity_dataset(entity_id: str):
 
 
 @app.get("/api/entities/{entity_id}/dataset/{filename:path}")
-def get_dataset_image(entity_id: str, filename: str):
-    entity = store_get_entity(entity_id)
+def get_dataset_image(entity_id: str, filename: str, user=Depends(get_current_user)):
+    entity = store_get_entity(entity_id, user_id=user["user_id"] if user else None)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     data = load_dataset_image_bytes(entity_id, filename)
@@ -518,8 +525,8 @@ def get_dataset_image(entity_id: str, filename: str):
 
 
 @app.delete("/api/entities/{entity_id}/dataset")
-def remove_entity_dataset_images(entity_id: str, req: RemoveDatasetRequest):
-    entity = store_get_entity(entity_id)
+def remove_entity_dataset_images(entity_id: str, req: RemoveDatasetRequest, user=Depends(get_current_user)):
+    entity = store_get_entity(entity_id, user_id=user["user_id"] if user else None)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     entity_dir = Path(DATA_DIR) / "storage" / "entities" / entity_id
@@ -531,7 +538,7 @@ def remove_entity_dataset_images(entity_id: str, req: RemoveDatasetRequest):
         )
     except DatasetValidationError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    update_entity_metadata(entity_id, {"image_count": result["total"]})
+    update_entity_metadata(entity_id, {"image_count": result["total"]}, user_id=user["user_id"] if user else None)
     return result
 
 
@@ -539,6 +546,7 @@ def remove_entity_dataset_images(entity_id: str, req: RemoveDatasetRequest):
 def upload_entity(
     name: str = Form(...),
     trigger_word: str = Form(...),
+    user=Depends(require_auth),
     training_profile: str = Form("balanced"),
     caption_mode: str = Form("auto"),
     file: UploadFile = File(...),
@@ -589,6 +597,7 @@ def upload_entity(
             trigger_word=clean_trigger,
             uploaded_filename=file.filename,
             temp_zip_path=tmp_path,
+            user_id=user["user_id"],
         )
         entity_id = str(entity["id"])
         raw_metadata = get_entity_metadata(entity_id)
@@ -597,7 +606,7 @@ def upload_entity(
 
         uploaded_zip_raw = raw_metadata.get("uploaded_zip_path")
         if not isinstance(uploaded_zip_raw, str) or not uploaded_zip_raw.strip():
-            update_entity_metadata(entity_id, {"status": "failed", "error": "Missing uploaded ZIP path"})
+            update_entity_metadata(entity_id, {"status": "failed", "error": "Missing uploaded ZIP path"}, user_id=user["user_id"])
             raise HTTPException(status_code=500, detail="Failed to prepare dataset")
 
         uploaded_zip_path = Path(uploaded_zip_raw)
@@ -616,6 +625,7 @@ def upload_entity(
                     "error": str(e),
                     "image_count": 0,
                 },
+                user_id=user["user_id"],
             )
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
@@ -626,6 +636,7 @@ def upload_entity(
                     "error": "Dataset preprocessing failed",
                     "image_count": 0,
                 },
+                user_id=user["user_id"],
             )
             raise HTTPException(status_code=500, detail=f"Failed to prepare dataset: {e}") from e
 
@@ -644,6 +655,7 @@ def upload_entity(
                     "error": str(e),
                     "image_count": int(manifest.get("image_count", 0)),
                 },
+                user_id=user["user_id"],
             )
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
@@ -654,6 +666,7 @@ def upload_entity(
                     "error": f"Caption processing failed: {e}",
                     "image_count": int(manifest.get("image_count", 0)),
                 },
+                user_id=user["user_id"],
             )
             raise HTTPException(status_code=500, detail=f"Failed to process captions: {e}") from e
 
@@ -664,6 +677,7 @@ def upload_entity(
                 "caption_mode": caption_mode_key,
                 "caption_stats": caption_stats,
             },
+            user_id=user["user_id"],
         )
         queue_info = training_queue.enqueue(
             entity_id=entity_id,
@@ -684,6 +698,7 @@ def upload_entity(
                 "training_params": TRAINING_PROFILES[profile_key],
                 "error": None,
             },
+            user_id=user["user_id"],
         )
         response_entity = started_entity or updated_entity or entity
         return {
@@ -715,8 +730,9 @@ def retrain_entity(
     warmup_ratio: float = Form(0.06),
     remove_filenames: str = Form("[]"),
     file: UploadFile | None = File(None),
+    user=Depends(require_auth),
 ):
-    entity = store_get_entity(entity_id)
+    entity = store_get_entity(entity_id, user_id=user["user_id"])
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     if entity.get("status") in ("queued", "training"):
@@ -750,7 +766,7 @@ def retrain_entity(
                 filenames=to_remove,
                 entity_id=entity_id,
             )
-            update_entity_metadata(entity_id, {"image_count": remove_result["total"]})
+            update_entity_metadata(entity_id, {"image_count": remove_result["total"]}, user_id=user["user_id"])
 
         if file and file.filename and file.filename.lower().endswith(".zip"):
             tmp_path = tmp_dir / f"retrain_{new_message_id()}.zip"
@@ -764,7 +780,7 @@ def retrain_entity(
                     zip_path=zip_path,
                     entity_id=entity_id,
                 )
-                update_entity_metadata(entity_id, {"image_count": add_result["total"]})
+                update_entity_metadata(entity_id, {"image_count": add_result["total"]}, user_id=user["user_id"])
 
         use_custom_bool = str(use_custom).strip().lower() in ("1", "true", "yes")
         if use_custom_bool:
@@ -804,7 +820,7 @@ def retrain_entity(
                     caption_mode=caption_mode_key,
                 )
             except CaptioningError as e:
-                update_entity_metadata(entity_id, {"status": "failed", "error": str(e)})
+                update_entity_metadata(entity_id, {"status": "failed", "error": str(e)}, user_id=user["user_id"])
                 raise HTTPException(status_code=400, detail=str(e)) from e
 
         update_entity_metadata(
@@ -813,6 +829,7 @@ def retrain_entity(
                 "caption_mode": caption_mode_key,
                 "image_count": len(list_dataset_images(entity_id)),
             },
+            user_id=user["user_id"],
         )
 
         queue_info = training_queue.enqueue(
@@ -840,6 +857,7 @@ def retrain_entity(
                 },
                 "error": None,
             },
+            user_id=user["user_id"],
         )
 
         return {
@@ -861,8 +879,8 @@ def retrain_entity(
 
 
 @app.put("/api/entities/{entity_id}")
-def update_entity(entity_id: str, req: UpdateEntityRequest):
-    entity = store_get_entity(entity_id)
+def update_entity(entity_id: str, req: UpdateEntityRequest, user=Depends(get_current_user)):
+    entity = store_get_entity(entity_id, user_id=user["user_id"] if user else None)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
 
@@ -881,14 +899,14 @@ def update_entity(entity_id: str, req: UpdateEntityRequest):
     if not updates:
         return entity
 
-    result = update_entity_metadata(entity_id, updates)
+    result = update_entity_metadata(entity_id, updates, user_id=user["user_id"] if user else None)
     if result is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     return result
 
 
 @app.delete("/api/entities/{entity_id}")
-def delete_entity(entity_id: str):
-    if not store_delete_entity(entity_id):
+def delete_entity(entity_id: str, user=Depends(get_current_user)):
+    if not store_delete_entity(entity_id, user_id=user["user_id"] if user else None):
         raise HTTPException(status_code=404, detail="Entity not found")
     return {"status": "deleted"}

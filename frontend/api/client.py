@@ -97,11 +97,11 @@ class APIClient:
 
     # ---- Auth ----
 
-    def register(self, email: str, password: str) -> dict[str, Any]:
-        return self._request("POST", "/api/auth/register", json={"email": email, "password": password})  # type: ignore
+    def register(self, username: str, password: str) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/register", json={"username": username, "password": password})  # type: ignore
 
-    def login(self, email: str, password: str) -> dict[str, Any]:
-        return self._request("POST", "/api/auth/login", json={"email": email, "password": password})  # type: ignore
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/login", json={"username": username, "password": password})  # type: ignore
 
     # ---- Gallery ----
 

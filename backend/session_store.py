@@ -34,7 +34,11 @@ def new_message_id() -> str:
     return f"msg_{uuid.uuid4().hex[:8]}"
 
 
-def create_session(session_id: str | None = None, title: str = "New session") -> dict[str, Any]:
+def create_session(
+    session_id: str | None = None,
+    title: str = "New session",
+    user_id: str | None = None,
+) -> dict[str, Any]:
     _ensure_dirs()
     init_db()
     sid = session_id or new_session_id()
@@ -46,6 +50,7 @@ def create_session(session_id: str | None = None, title: str = "New session") ->
             title=title,
             created_at=now,
             favourite=False,
+            user_id=user_id,
         )
         session.add(s)
 
@@ -58,25 +63,35 @@ def create_session(session_id: str | None = None, title: str = "New session") ->
     }
 
 
-def get_session(session_id: str) -> dict[str, Any] | None:
+def get_session(session_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    """Get session. If user_id given, return if user owns it or legacy. If no user, only legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(SessionModel, session_id)
         if row is None:
             return None
+        if user_id is not None:
+            if row.user_id is not None and row.user_id != user_id:
+                return None
+        else:
+            if row.user_id is not None:
+                return None  # Anonymous: only legacy sessions
         return row.to_dict()
 
 
-def list_sessions() -> list[dict[str, Any]]:
+def list_sessions(user_id: str | None = None) -> list[dict[str, Any]]:
+    """List sessions. If user_id given, return only that user's sessions + legacy (null)."""
     _ensure_dirs()
     init_db()
     sessions: list[dict[str, Any]] = []
     with session_scope() as session:
-        rows = (
-            session.query(SessionModel)
-            .order_by(SessionModel.created_at.desc())
-            .all()
-        )
+        q = session.query(SessionModel).order_by(SessionModel.created_at.desc())
+        from sqlalchemy import or_
+        if user_id is not None:
+            q = q.filter(or_(SessionModel.user_id == user_id, SessionModel.user_id.is_(None)))
+        else:
+            q = q.filter(SessionModel.user_id.is_(None))  # Anonymous: only legacy sessions
+        rows = q.all()
         for row in rows:
             msg_count = len(row.messages)
             last_prompt = ""
@@ -95,11 +110,18 @@ def list_sessions() -> list[dict[str, Any]]:
     return sessions
 
 
-def update_session(session_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+def update_session(
+    session_id: str,
+    updates: dict[str, Any],
+    user_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Update session. If user_id given, only allow if user owns it or session is legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(SessionModel, session_id)
         if row is None:
+            return None
+        if user_id is not None and row.user_id is not None and row.user_id != user_id:
             return None
         if "title" in updates:
             row.title = updates["title"]
@@ -113,11 +135,14 @@ def update_session(session_id: str, updates: dict[str, Any]) -> dict[str, Any] |
         return row.to_dict()
 
 
-def delete_session(session_id: str) -> bool:
+def delete_session(session_id: str, user_id: str | None = None) -> bool:
+    """Delete session. If user_id given, only allow if user owns it or session is legacy."""
     init_db()
     with session_scope() as session:
         row = session.get(SessionModel, session_id)
         if row is None:
+            return False
+        if user_id is not None and row.user_id is not None and row.user_id != user_id:
             return False
         session.delete(row)
 

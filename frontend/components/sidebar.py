@@ -80,7 +80,7 @@ def _handle_new_chat() -> None:
         st.session_state["active_session_id"] = new_sess["id"]
         st.toast("New session created")
     else:
-        st.error("Could not create session. Check backend in Settings.")
+        st.error("Could not create session. Login required or check backend in Settings.")
     st.rerun()
 
 
