@@ -12,6 +12,7 @@ import streamlit as st
 from PIL import Image
 
 from config import BACKEND_URL
+from services.auth_service import is_logged_in
 from services.entity_service import get_entities
 
 IMAGE_SIZES = [
@@ -128,6 +129,10 @@ def _render_entities_section() -> None:
 
             _render_retrain_section(active_entity)
 
+            entity_status = str(active_entity.get("status", ""))
+            if entity_status == "ready" and is_logged_in():
+                _render_publish_lora_section(active_entity)
+
             if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
                 from services.entity_service import delete_entity
                 if delete_entity(active_entity["id"]):
@@ -161,6 +166,47 @@ def _render_entities_section() -> None:
 
         if st.session_state.get("show_entity_form", False):
             _render_entity_form()
+
+
+def _render_publish_lora_section(active_entity: dict) -> None:
+    """Render Publish to Gallery LoRA section."""
+    from services.gallery_service import publish_lora_to_gallery
+
+    with st.expander("Publish to Gallery", expanded=False):
+        st.caption("Share this LoRA so others can add it to their entities.")
+        pub_name = st.text_input(
+            "Name (for gallery)",
+            value=active_entity.get("name", ""),
+            key=f"publish_lora_name_{active_entity['id']}",
+        )
+        pub_trigger = st.text_input(
+            "Trigger word",
+            value=active_entity.get("trigger_word", ""),
+            key=f"publish_lora_trigger_{active_entity['id']}",
+        )
+        pub_desc = st.text_area(
+            "Description (optional)",
+            value="",
+            key=f"publish_lora_desc_{active_entity['id']}",
+            height=60,
+        )
+        if st.button("Publish LoRA", key=f"publish_lora_btn_{active_entity['id']}", type="primary"):
+            name_val = pub_name.strip()
+            trigger_val = pub_trigger.strip()
+            if not name_val or not trigger_val:
+                st.error("Name and trigger word required")
+            else:
+                result = publish_lora_to_gallery(
+                    entity_id=active_entity["id"],
+                    name=name_val,
+                    trigger_word=trigger_val,
+                    description=pub_desc.strip() or None,
+                )
+                if result:
+                    st.toast("LoRA published to gallery!")
+                    st.rerun()
+                else:
+                    st.error("Failed to publish. Check if already published or backend.")
 
 
 def _render_retrain_section(active_entity: dict) -> None:

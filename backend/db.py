@@ -98,6 +98,56 @@ class SessionModel(Base):
         }
 
 
+class UserModel(Base):
+    """User account for auth and gallery."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    email: Mapped[str] = mapped_column(String(256), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class GalleryImageModel(Base):
+    """Published image in global gallery."""
+
+    __tablename__ = "gallery_images"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(256), nullable=False)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    settings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    likes_count: Mapped[int] = mapped_column(Integer, default=0)
+    published_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class GalleryLikeModel(Base):
+    """User like on gallery image."""
+
+    __tablename__ = "gallery_likes"
+
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    image_id: Mapped[str] = mapped_column(String(64), ForeignKey("gallery_images.id", ondelete="CASCADE"), primary_key=True)
+
+
+class GalleryLoraModel(Base):
+    """Published LoRA in gallery — others can add (copy) to their entities."""
+
+    __tablename__ = "gallery_loras"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    trigger_word: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    add_count: Mapped[int] = mapped_column(Integer, default=0)
+    published_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
 class MessageModel(Base):
     """Generation message (prompt + images)."""
 

@@ -17,6 +17,7 @@ _CSS_PATH = Path(__file__).parent / "styles" / "main.css"
 if _CSS_PATH.exists():
     st.markdown(f"<style>{_CSS_PATH.read_text()}</style>", unsafe_allow_html=True)
 
+from components.gallery import render_gallery  # noqa: E402
 from components.my_images import render_my_images  # noqa: E402
 from components.prompt_helper import render_prompt_helper  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
@@ -32,6 +33,8 @@ current_page = st.session_state.get("current_page", "generate")
 
 if current_page == "my_images":
     render_my_images()
+elif current_page == "gallery":
+    render_gallery()
 elif current_page == "settings":
     render_settings()
 else:

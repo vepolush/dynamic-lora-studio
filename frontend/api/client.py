@@ -24,9 +24,21 @@ class BackendError(Exception):
 class APIClient:
     """Sync HTTP client for Dynamic LoRA Studio backend."""
 
-    def __init__(self, base_url: str = BACKEND_URL, timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(
+        self,
+        base_url: str = BACKEND_URL,
+        timeout: float = DEFAULT_TIMEOUT,
+        token: str | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.token = token
+
+    def _headers(self) -> dict[str, str]:
+        h = {}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        return h
 
     def _request(
         self,
@@ -40,6 +52,7 @@ class APIClient:
     ) -> dict[str, Any] | list[Any]:
         url = f"{self.base_url}{path}"
         req_timeout = timeout if timeout is not None else self.timeout
+        headers = self._headers()
         try:
             with httpx.Client(timeout=req_timeout) as client:
                 if files:
@@ -47,12 +60,12 @@ class APIClient:
                     if json:
                         form_data.update({k: str(v) for k, v in json.items()})
                     response = client.request(
-                        method, url, data=form_data, files=files, timeout=req_timeout
+                        method, url, data=form_data, files=files, headers=headers, timeout=req_timeout
                     )
                 elif data:
-                    response = client.request(method, url, data=data, timeout=req_timeout)
+                    response = client.request(method, url, data=data, headers=headers, timeout=req_timeout)
                 else:
-                    response = client.request(method, url, json=json, timeout=req_timeout)
+                    response = client.request(method, url, json=json, headers=headers, timeout=req_timeout)
         except httpx.ConnectError as e:
             raise BackendError(f"Cannot connect to backend at {self.base_url}: {e}") from e
         except httpx.TimeoutException as e:
@@ -75,12 +88,86 @@ class APIClient:
         req_timeout = timeout if timeout is not None else QUICK_TIMEOUT
         try:
             with httpx.Client(timeout=req_timeout) as client:
-                response = client.get(url)
+                response = client.get(url, headers=self._headers())
                 if response.status_code != 200:
                     return None
                 return response.content
         except (httpx.ConnectError, httpx.TimeoutException):
             return None
+
+    # ---- Auth ----
+
+    def register(self, email: str, password: str) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/register", json={"email": email, "password": password})  # type: ignore
+
+    def login(self, email: str, password: str) -> dict[str, Any]:
+        return self._request("POST", "/api/auth/login", json={"email": email, "password": password})  # type: ignore
+
+    # ---- Gallery ----
+
+    def get_gallery(self, sort: str = "newest", limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        data = self._request("GET", f"/api/gallery?sort={sort}&limit={limit}&offset={offset}", timeout=QUICK_TIMEOUT)
+        return data.get("images", []) if isinstance(data, dict) else []
+
+    def get_gallery_image(self, image_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/gallery/{image_id}", timeout=QUICK_TIMEOUT)  # type: ignore
+
+    def get_gallery_image_bytes(self, image_id: str) -> bytes | None:
+        return self._get_bytes(f"/api/gallery/{image_id}/image", timeout=QUICK_TIMEOUT)
+
+    def publish_to_gallery(self, session_id: str, filename: str, prompt: str, settings: dict | None = None) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/gallery/publish",
+            json={"session_id": session_id, "filename": filename, "prompt": prompt, "settings": settings},
+            timeout=QUICK_TIMEOUT,
+        )  # type: ignore
+
+    def like_gallery_image(self, image_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/gallery/{image_id}/like", timeout=QUICK_TIMEOUT)  # type: ignore
+
+    # ---- Gallery LoRAs ----
+
+    def publish_lora_to_gallery(
+        self,
+        entity_id: str,
+        name: str,
+        trigger_word: str,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "entity_id": entity_id,
+            "name": name,
+            "trigger_word": trigger_word,
+        }
+        if description is not None:
+            payload["description"] = description
+        return self._request("POST", "/api/gallery/loras/publish", json=payload, timeout=QUICK_TIMEOUT)  # type: ignore
+
+    def get_gallery_loras(
+        self,
+        sort: str = "newest",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            f"/api/gallery/loras?sort={sort}&limit={limit}&offset={offset}",
+            timeout=QUICK_TIMEOUT,
+        )
+        return data.get("loras", []) if isinstance(data, dict) else []
+
+    def get_gallery_lora(self, lora_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/gallery/loras/{lora_id}", timeout=QUICK_TIMEOUT)  # type: ignore
+
+    def get_gallery_lora_preview_bytes(self, lora_id: str) -> bytes | None:
+        return self._get_bytes(f"/api/gallery/loras/{lora_id}/preview", timeout=QUICK_TIMEOUT)
+
+    def add_gallery_lora(self, lora_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/gallery/loras/{lora_id}/add", timeout=QUICK_TIMEOUT)  # type: ignore
+
+    def unpublish_gallery_lora(self, lora_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/api/gallery/loras/{lora_id}", timeout=QUICK_TIMEOUT)  # type: ignore
 
     def get_entity_preview_bytes(self, entity_id: str) -> bytes | None:
         """Fetch entity preview image as bytes. Returns None if not found."""

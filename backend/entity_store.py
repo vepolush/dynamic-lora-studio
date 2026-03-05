@@ -256,6 +256,48 @@ def create_entity(
     return _normalize_entity(meta) if meta else {"id": entity_id, "name": name, "trigger_word": trigger_word}
 
 
+def create_entity_from_weights(
+    *,
+    name: str,
+    trigger_word: str,
+    source_weights_dir: Path,
+) -> dict[str, Any]:
+    """Create entity from copied LoRA weights (e.g. from gallery). No dataset."""
+    _ensure_root()
+    init_db()
+    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    entity_id = f"entity_{uuid.uuid4().hex[:8]}_{_slugify(name)[:32]}"
+
+    entity_dir = _entity_dir(entity_id)
+    dataset_dir = entity_dir / "dataset"
+    weights_dir = entity_dir / "weights"
+    version_name = "v1_shared"
+
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    weights_dir.mkdir(parents=True, exist_ok=True)
+    version_dir = weights_dir / version_name
+    version_dir.mkdir(parents=True, exist_ok=True)
+
+    for f in source_weights_dir.iterdir():
+        if f.is_file():
+            shutil.copy2(f, version_dir / f.name)
+
+    with session_scope() as session:
+        entity = EntityModel(
+            id=entity_id,
+            name=name,
+            trigger_word=trigger_word,
+            status="ready",
+            created_at=now,
+            image_count=0,
+            active_version=version_name,
+        )
+        session.add(entity)
+
+    meta = get_entity_metadata(entity_id)
+    return _normalize_entity(meta) if meta else {"id": entity_id, "name": name, "trigger_word": trigger_word}
+
+
 def delete_entity(entity_id: str) -> bool:
     init_db()
     entity_dir = _entity_dir(entity_id)

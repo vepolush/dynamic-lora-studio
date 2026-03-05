@@ -252,15 +252,22 @@ def _render_message(msg: dict, session_id: str) -> None:
     )
 
     if images:
-        _render_message_images(session_id, images, prompt=prompt)
+        _render_message_images(session_id, images, prompt=prompt, settings=settings)
 
     if enhanced and enhanced != prompt:
         with st.expander("Enhanced prompt", expanded=False):
             st.caption(enhanced)
 
 
-def _render_message_images(session_id: str, images: list[dict], prompt: str = "") -> None:
+def _render_message_images(
+    session_id: str,
+    images: list[dict],
+    prompt: str = "",
+    settings: dict | None = None,
+) -> None:
     """Render images from base64 data or by fetching from backend when missing."""
+    from services.auth_service import is_logged_in
+    from services.gallery_service import publish_to_gallery
     from services.session_service import get_session, get_session_image_base64, update_session
 
     full_session = get_session(session_id)
@@ -299,15 +306,33 @@ def _render_message_images(session_id: str, images: list[dict], prompt: str = ""
                     caption=f"seed: {seed}",
                 )
                 if filename:
-                    is_fav = filename in fav_filenames
-                    if st.button("♥" if is_fav else "♡", key=f"fav_img_{key_safe}", help="Toggle favourite"):
-                        new_fav = list(fav_filenames)
-                        if is_fav:
-                            new_fav.remove(filename)
-                        else:
-                            new_fav.append(filename)
-                        if update_session(session_id, favourite_image_filenames=new_fav):
-                            st.rerun()
+                    btn_col1, btn_col2 = st.columns(2, gap="small")
+                    with btn_col1:
+                        is_fav = filename in fav_filenames
+                        if st.button("♥" if is_fav else "♡", key=f"fav_img_{key_safe}", help="Toggle favourite"):
+                            new_fav = list(fav_filenames)
+                            if is_fav:
+                                new_fav.remove(filename)
+                            else:
+                                new_fav.append(filename)
+                            if update_session(session_id, favourite_image_filenames=new_fav):
+                                st.rerun()
+                    with btn_col2:
+                        if st.button("Publish", key=f"pub_img_{key_safe}", help="Publish to gallery"):
+                            if is_logged_in():
+                                result = publish_to_gallery(
+                                    session_id,
+                                    filename,
+                                    prompt=prompt,
+                                    settings=settings or {},
+                                )
+                                if result:
+                                    st.toast("Published to gallery!")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to publish")
+                            else:
+                                st.warning("Log in to publish")
                 st.markdown("</div>", unsafe_allow_html=True)
             else:
                 st.markdown(

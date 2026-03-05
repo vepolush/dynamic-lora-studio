@@ -9,6 +9,7 @@ from state.session import get_favourite_count
 NAV_ITEMS = [
     ("generate", "Generate", ":material/auto_awesome:"),
     ("my_images", "My Images", ":material/photo_library:"),
+    ("gallery", "Gallery", ":material/collections:"),
     ("settings", "Settings", ":material/settings:"),
 ]
 
@@ -42,13 +43,9 @@ def render_sidebar() -> None:
             _handle_new_chat()
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown(
-            '<div class="profile-block">'
-            '<div class="profile-avatar">U</div>'
-            '<div class="profile-name">User</div>'
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        from components.auth import render_auth_sidebar
+        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+        render_auth_sidebar()
 
 
 def _nav_button(page_id: str, label: str, icon: str) -> None:

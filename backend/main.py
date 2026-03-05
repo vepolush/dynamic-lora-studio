@@ -8,9 +8,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+from auth import get_current_user, login as auth_login, register as auth_register, require_auth
 
 from captioning import CAPTION_MODES, CaptioningError, apply_caption_mode
 from dataset_prep import (
@@ -51,6 +53,21 @@ from session_store import (
     update_session as store_update_session,
 )
 from training_queue import training_queue
+from gallery_store import (
+    get_gallery_image,
+    list_gallery,
+    load_gallery_image_bytes,
+    publish_image,
+    toggle_like,
+)
+from gallery_lora_store import (
+    add_gallery_lora,
+    get_gallery_lora,
+    list_gallery_loras,
+    load_gallery_lora_preview_bytes,
+    publish_lora,
+    unpublish_lora,
+)
 
 
 @asynccontextmanager
@@ -137,6 +154,30 @@ class RemoveDatasetRequest(BaseModel):
     filenames: list[str] = []
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class PublishRequest(BaseModel):
+    session_id: str
+    filename: str
+    prompt: str
+    settings: dict | None = None
+
+
+class PublishLoraRequest(BaseModel):
+    entity_id: str
+    name: str
+    trigger_word: str
+    description: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -145,6 +186,136 @@ class RemoveDatasetRequest(BaseModel):
 def health_check():
     status = "ready" if ml_manager.pipe is not None else "loading"
     return {"status": status}
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+@app.post("/api/auth/register")
+def register(req: RegisterRequest):
+    return auth_register(req.email, req.password)
+
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest):
+    return auth_login(req.email, req.password)
+
+
+# ---------------------------------------------------------------------------
+# Gallery
+# ---------------------------------------------------------------------------
+
+@app.get("/api/gallery")
+def get_gallery(
+    sort: str = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    user=Depends(get_current_user),
+):
+    return {"images": list_gallery(sort=sort, limit=limit, offset=offset, current_user_id=user["user_id"] if user else None)}
+
+
+@app.post("/api/gallery/loras/publish")
+def publish_lora_to_gallery(req: PublishLoraRequest, user=Depends(require_auth)):
+    try:
+        return publish_lora(
+            user_id=user["user_id"],
+            entity_id=req.entity_id,
+            name=req.name,
+            trigger_word=req.trigger_word,
+            description=req.description,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/gallery/loras")
+def get_gallery_loras(
+    sort: str = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    user=Depends(get_current_user),
+):
+    return {
+        "loras": list_gallery_loras(
+            sort=sort,
+            limit=limit,
+            offset=offset,
+            current_user_id=user["user_id"] if user else None,
+        )
+    }
+
+
+@app.get("/api/gallery/loras/{lora_id}")
+def get_gallery_lora_item(lora_id: str, user=Depends(get_current_user)):
+    item = get_gallery_lora(lora_id, current_user_id=user["user_id"] if user else None)
+    if not item:
+        raise HTTPException(status_code=404, detail="LoRA not found")
+    return item
+
+
+@app.get("/api/gallery/loras/{lora_id}/preview")
+def get_gallery_lora_preview(lora_id: str):
+    data = load_gallery_lora_preview_bytes(lora_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="LoRA preview not found")
+    return Response(content=data, media_type="image/png")
+
+
+@app.post("/api/gallery/loras/{lora_id}/add")
+def add_gallery_lora_to_entities(lora_id: str, user=Depends(require_auth)):
+    try:
+        return add_gallery_lora(lora_id, user["user_id"])
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="LoRA not found")
+
+
+@app.delete("/api/gallery/loras/{lora_id}")
+def unpublish_gallery_lora(lora_id: str, user=Depends(require_auth)):
+    if not unpublish_lora(lora_id, user["user_id"]):
+        raise HTTPException(status_code=404, detail="LoRA not found or you are not the creator")
+    return {"status": "unpublished"}
+
+
+@app.get("/api/gallery/{image_id}")
+def get_gallery_item(image_id: str, user=Depends(get_current_user)):
+    item = get_gallery_image(image_id, current_user_id=user["user_id"] if user else None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return item
+
+
+@app.get("/api/gallery/{image_id}/image")
+def get_gallery_image_bytes(image_id: str):
+    data = load_gallery_image_bytes(image_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(content=data, media_type="image/png")
+
+
+@app.post("/api/gallery/publish")
+def publish_to_gallery(req: PublishRequest, user=Depends(require_auth)):
+    try:
+        return publish_image(
+            user_id=user["user_id"],
+            session_id=req.session_id,
+            filename=req.filename,
+            prompt=req.prompt,
+            settings=req.settings,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/gallery/{image_id}/like")
+def like_gallery_image(image_id: str, user=Depends(require_auth)):
+    result = toggle_like(image_id, user["user_id"])
+    if not result:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return result
 
 
 # ---------------------------------------------------------------------------

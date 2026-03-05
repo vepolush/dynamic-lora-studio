@@ -1196,3 +1196,20 @@ header[data-testid="stHeader"] {
     background: var(--accent);
     color: #fff;
 }
+
+/* ============================
+   AUTH & GALLERY
+   ============================ */
+.auth-user {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.4rem;
+    word-break: break-all;
+}
+
+.gallery-prompt {
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
