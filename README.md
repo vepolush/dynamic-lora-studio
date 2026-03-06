@@ -141,7 +141,6 @@ dynamic-lora-studio/
 │   ├── db.py             # SQLAlchemy models, SQLite
 │   ├── entity_store.py   # Entity storage (DB + disk)
 │   ├── session_store.py  # Session/message storage (DB + disk)
-│   └── migrate_json_to_db.py  # One-time JSON → SQLite migration
 ├── frontend/
 │   ├── app.py            # Streamlit entry
 │   ├── components/       # Sidebar, workspace, prompt_helper, settings
@@ -161,3 +160,16 @@ dynamic-lora-studio/
 - **Caption modes** — Auto (BLIP), None, Use provided (.txt in ZIP)
 - **Settings** — steps, guidance scale, size, LoRA strength, seed, quality, style, lighting
 - **Sessions** — multiple generation sessions, favourites
+
+---
+
+## Testing
+
+```bash
+pip install pytest httpx
+pip install -r backend/requirements.txt   # for API tests
+python -m pytest tests/ -v
+```
+
+- `tests/test_dataset_prep.py` — dataset validation, path traversal, ZIP handling
+- `tests/test_api.py` — health, auth (requires backend deps)

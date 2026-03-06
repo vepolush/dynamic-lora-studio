@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import queue
+
+from loguru import logger
 import threading
 import uuid
 from dataclasses import dataclass
@@ -138,6 +140,7 @@ class TrainingQueueManager:
                 continue
 
             started_at = _utc_now()
+            logger.info("Training started: entity_id={} job_id={}", job.entity_id, job.id)
             self._set_job_state(job_id=job.id, status="training", started_at=started_at, error=None)
             update_entity_metadata(
                 job.entity_id,
@@ -167,6 +170,11 @@ class TrainingQueueManager:
                 if version not in versions:
                     versions.append(version)
 
+                training_duration_s = result.get("training_time_seconds", 0)
+                logger.info(
+                    "Entity {} trained in {:.1f}s (version={}, steps={}, rank={})",
+                    job.entity_id, training_duration_s, version, job.steps, job.rank,
+                )
                 preview_url = None
                 preview_error = None
                 try:
@@ -177,6 +185,7 @@ class TrainingQueueManager:
                     )
                 except Exception as exc:
                     preview_error = str(exc)
+                    logger.warning("Preview generation failed for {}: {}", job.entity_id, exc)
                 finished_at = _utc_now()
                 update_entity_metadata(
                     job.entity_id,
@@ -194,6 +203,7 @@ class TrainingQueueManager:
                 self._set_job_state(job_id=job.id, status="ready", finished_at=finished_at, error=None)
             except Exception as exc:
                 finished_at = _utc_now()
+                logger.exception("Training failed for entity {}: {}", job.entity_id, exc)
                 update_entity_metadata(
                     job.entity_id,
                     {

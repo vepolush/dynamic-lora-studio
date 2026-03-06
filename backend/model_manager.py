@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+
+from loguru import logger
 import io
 import os
 import threading
@@ -40,15 +42,15 @@ class ModelManager:
         self._active_lora_key: str | None = None
 
     def load_model(self) -> None:
-        print("Checking base model...")
+        logger.info("Checking base model at {}", MODEL_DIR)
         if not os.path.exists(os.path.join(MODEL_DIR, "model_index.json")):
-            print(f"Downloading {MODEL_ID}...")
+            logger.info("Downloading {}...", MODEL_ID)
             snapshot_download(repo_id=MODEL_ID, local_dir=MODEL_DIR)
-            print("Download complete.")
+            logger.info("Model download complete")
         else:
-            print("Model found locally.")
+            logger.info("Model found locally")
 
-        print("Loading model to GPU...")
+        logger.info("Loading model to GPU...")
         self.pipe = StableDiffusionPipeline.from_pretrained(
             MODEL_DIR,
             torch_dtype=torch.float16,
@@ -56,7 +58,7 @@ class ModelManager:
         )
         self.pipe.to("cuda")
         self.pipe.enable_attention_slicing()
-        print("Model ready.")
+        logger.info("Model ready")
 
     def _set_scheduler(self, name: str) -> None:
         if self.pipe is None:

@@ -23,3 +23,5 @@ python-jose[cryptography]>=3.3.0
 # --- Utilities ---
 Pillow>=10.2.0
 huggingface-hub>=0.21.4
+loguru>=0.7.0
+filetype>=1.2.0

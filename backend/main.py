@@ -5,12 +5,18 @@ from __future__ import annotations
 import time
 import traceback
 from contextlib import asynccontextmanager
+
+from loguru import logger
+
+from logger import setup_logging
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+import filetype
 
 from auth import get_current_user, login as auth_login, register as auth_register, require_auth
 
@@ -73,16 +79,20 @@ from gallery_lora_store import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     from db import init_db
     init_db()
+    logger.info("Database initialized")
     training_queue.start()
+    logger.info("Training queue started")
     try:
         ml_manager.load_model()
+        logger.info("Model loaded successfully")
     except Exception as e:
-        print(f"Model loading error: {e}")
+        logger.error("Model loading failed: {}", e)
     yield
     training_queue.stop()
-    print("Server shutting down...")
+    logger.info("Server shutting down")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -415,7 +425,10 @@ def generate_image(req: GenerateRequest, user=Depends(get_current_user)):
         steps = get_quality_steps(req.quality, req.steps)
         scheduler = get_quality_scheduler(req.quality, req.scheduler)
 
-        print(f"Generating: '{enhanced_prompt}' | neg: '{negative[:80]}...' | steps={steps} sched={scheduler}")
+        logger.info(
+            "Generating: prompt_len={} steps={} sched={} entity={}",
+            len(enhanced_prompt), steps, scheduler, req.entity_id,
+        )
         start_time = time.time()
 
         results = ml_manager.generate(
@@ -434,7 +447,7 @@ def generate_image(req: GenerateRequest, user=Depends(get_current_user)):
         )
 
         gen_time = time.time() - start_time
-        print(f"Done in {gen_time:.2f}s — {len(results)} image(s)")
+        logger.info("Generation done in {:.2f}s — {} image(s)", gen_time, len(results))
 
         images_response: list[dict[str, Any]] = []
         image_filenames: list[dict[str, Any]] = []
@@ -484,7 +497,7 @@ def generate_image(req: GenerateRequest, user=Depends(get_current_user)):
         }
 
     except Exception as e:
-        print(f"Generation error: {e}")
+        logger.exception("Generation error: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -601,6 +614,13 @@ def upload_entity(
         file_bytes = file.file.read()
         if not file_bytes:
             raise HTTPException(status_code=400, detail="Uploaded ZIP is empty")
+        kind = filetype.guess(file_bytes)
+        zip_mimes = {"application/zip", "application/x-zip-compressed"}
+        if kind is None or kind.mime not in zip_mimes:
+            raise HTTPException(
+                status_code=400,
+                detail="File is not a valid ZIP archive (magic bytes check failed). Use .zip format.",
+            )
         with open(tmp_path, "wb") as f:
             f.write(file_bytes)
 
@@ -721,8 +741,7 @@ def upload_entity(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Upload entity error: {e}")
-        traceback.print_exc()
+        logger.exception("Upload entity error: {}", e)
         raise HTTPException(status_code=500, detail=f"Failed to upload entity: {e}") from e
     finally:
         if tmp_path.exists():

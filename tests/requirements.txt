@@ -1,0 +1,3 @@
+pytest>=7.0.0
+httpx>=0.27.0
+# For API tests, also install backend deps: pip install -r ../backend/requirements.txt

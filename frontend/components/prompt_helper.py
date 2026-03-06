@@ -67,19 +67,48 @@ def render_prompt_helper() -> None:
 # ---------------------------------------------------------------------------
 
 def _render_entities_section() -> None:
+    entities = st.session_state.get("entities", [])
+    has_training = any(e.get("status") in ("queued", "training") for e in entities)
+    run_every_sec = 3 if has_training else None
+
+    @st.fragment(run_every=run_every_sec)
+    def _entities_polling_fragment():
+        latest = get_entities()
+        if latest is not None:
+            st.session_state["entities"] = latest
+            active_id = st.session_state.get("active_entity_id")
+            if active_id and not any(e.get("id") == active_id for e in latest):
+                st.session_state["active_entity_id"] = None
+        st.session_state["entities_last_refresh_ts"] = time.time()
+
+        new_has_training = any(
+            e.get("status") in ("queued", "training")
+            for e in st.session_state.get("entities", [])
+        )
+        was_training = st.session_state.get("entities_was_training", False)
+        st.session_state["entities_was_training"] = new_has_training
+        if was_training and not new_has_training:
+            st.toast("Entity training complete!")
+            st.rerun()
+
+        _render_entities_content()
+
     with st.expander("Entities & LoRA", expanded=True):
-        entities = st.session_state.get("entities", [])
-        _safe_autorefresh(interval_ms=5000, key="entities_polling_autorefresh")
+        _entities_polling_fragment()
 
-        active_id = st.session_state.get("active_entity_id")
 
-        _render_entity_grid(entities, active_id)
+def _render_entities_content() -> None:
+    """Inner content of Entities section (called from fragment for polling)."""
+    entities = st.session_state.get("entities", [])
+    active_id = st.session_state.get("active_entity_id")
+    active_entity = _get_active_entity()
 
-        active_entity = _get_active_entity()
-        if active_entity:
-            versions = active_entity.get("versions", ["v1"])
-            image_count = active_entity.get("image_count", 0)
-            st.markdown(
+    _render_entity_grid(entities, active_id)
+
+    if active_entity:
+        versions = active_entity.get("versions", ["v1"])
+        image_count = active_entity.get("image_count", 0)
+        st.markdown(
                 f'<div class="entity-detail">'
                 f'<div class="entity-detail-name">{active_entity.get("name", "")}</div>'
                 f'<div class="entity-detail-trigger">{active_entity.get("trigger_word", "")}</div>'
@@ -87,85 +116,85 @@ def _render_entities_section() -> None:
                 f'{image_count} images · '
                 f'{len(versions)} version(s)'
                 f"</div></div>",
-                unsafe_allow_html=True,
+            unsafe_allow_html=True,
+        )
+
+        with st.expander("Edit entity", expanded=False):
+            edit_name_key = f"entity_edit_name_{active_entity['id']}"
+            edit_trigger_key = f"entity_edit_trigger_{active_entity['id']}"
+            new_name = st.text_input(
+                "Name",
+                value=active_entity.get("name", ""),
+                key=edit_name_key,
+                placeholder="e.g. My Dog",
+            )
+            new_trigger = st.text_input(
+                "Trigger word",
+                value=active_entity.get("trigger_word", ""),
+                key=edit_trigger_key,
+                placeholder="e.g. <my_dog>",
+            )
+            if st.button("Save", key=f"entity_edit_save_{active_entity['id']}", type="primary"):
+                name_val = new_name.strip()
+                trigger_val = new_trigger.strip()
+                if not name_val or not trigger_val:
+                    st.error("Name and trigger word cannot be empty")
+                else:
+                    from services.entity_service import update_entity
+                    updated = update_entity(
+                        active_entity["id"],
+                        name=name_val,
+                        trigger_word=trigger_val,
+                    )
+                    if updated:
+                        for e in st.session_state.get("entities", []):
+                            if e["id"] == active_entity["id"]:
+                                e.update(updated)
+                                break
+                        st.toast("Entity updated")
+                        st.rerun()
+                    else:
+                        st.error("Failed to update entity")
+
+        _render_retrain_section(active_entity)
+
+        entity_status = str(active_entity.get("status", ""))
+        if entity_status == "ready" and is_logged_in():
+            _render_publish_lora_section(active_entity)
+
+        if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
+            from services.entity_service import delete_entity
+            if delete_entity(active_entity["id"]):
+                st.session_state["entities"] = [e for e in st.session_state.get("entities", []) if e["id"] != active_entity["id"]]
+                st.session_state["active_entity_id"] = None
+                st.toast("Entity deleted")
+                st.rerun()
+            else:
+                st.error("Failed to delete entity")
+
+        if len(versions) > 1:
+            active_ver = active_entity.get("active_version", versions[0])
+            idx = versions.index(active_ver) if active_ver in versions else 0
+            st.selectbox(
+                "Version",
+                versions,
+                index=idx,
+                key="entity_version_select",
             )
 
-            with st.expander("Edit entity", expanded=False):
-                edit_name_key = f"entity_edit_name_{active_entity['id']}"
-                edit_trigger_key = f"entity_edit_trigger_{active_entity['id']}"
-                new_name = st.text_input(
-                    "Name",
-                    value=active_entity.get("name", ""),
-                    key=edit_name_key,
-                    placeholder="e.g. My Dog",
-                )
-                new_trigger = st.text_input(
-                    "Trigger word",
-                    value=active_entity.get("trigger_word", ""),
-                    key=edit_trigger_key,
-                    placeholder="e.g. <my_dog>",
-                )
-                if st.button("Save", key=f"entity_edit_save_{active_entity['id']}", type="primary"):
-                    name_val = new_name.strip()
-                    trigger_val = new_trigger.strip()
-                    if not name_val or not trigger_val:
-                        st.error("Name and trigger word cannot be empty")
-                    else:
-                        from services.entity_service import update_entity
-                        updated = update_entity(
-                            active_entity["id"],
-                            name=name_val,
-                            trigger_word=trigger_val,
-                        )
-                        if updated:
-                            for e in st.session_state.get("entities", []):
-                                if e["id"] == active_entity["id"]:
-                                    e.update(updated)
-                                    break
-                            st.toast("Entity updated")
-                            st.rerun()
-                        else:
-                            st.error("Failed to update entity")
+    lora_val = st.session_state.get("lora_strength_slider", st.session_state.get("lora_strength", 0.8))
+    st.slider(
+        "LoRA Strength",
+        min_value=0.0,
+        max_value=1.5,
+        value=lora_val,
+        step=0.05,
+        key="lora_strength_slider",
+    )
+    st.session_state["lora_strength"] = st.session_state.get("lora_strength_slider", lora_val)
 
-            _render_retrain_section(active_entity)
-
-            entity_status = str(active_entity.get("status", ""))
-            if entity_status == "ready" and is_logged_in():
-                _render_publish_lora_section(active_entity)
-
-            if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
-                from services.entity_service import delete_entity
-                if delete_entity(active_entity["id"]):
-                    st.session_state["entities"] = [e for e in st.session_state.get("entities", []) if e["id"] != active_entity["id"]]
-                    st.session_state["active_entity_id"] = None
-                    st.toast("Entity deleted")
-                    st.rerun()
-                else:
-                    st.error("Failed to delete entity")
-
-            if len(versions) > 1:
-                active_ver = active_entity.get("active_version", versions[0])
-                idx = versions.index(active_ver) if active_ver in versions else 0
-                st.selectbox(
-                    "Version",
-                    versions,
-                    index=idx,
-                    key="entity_version_select",
-                )
-
-        lora_val = st.session_state.get("lora_strength_slider", st.session_state.get("lora_strength", 0.8))
-        st.slider(
-            "LoRA Strength",
-            min_value=0.0,
-            max_value=1.5,
-            value=lora_val,
-            step=0.05,
-            key="lora_strength_slider",
-        )
-        st.session_state["lora_strength"] = st.session_state.get("lora_strength_slider", lora_val)
-
-        if st.session_state.get("show_entity_form", False):
-            _render_entity_form()
+    if st.session_state.get("show_entity_form", False):
+        _render_entity_form()
 
 
 def _render_publish_lora_section(active_entity: dict) -> None:
@@ -924,11 +953,3 @@ def _to_image_src(preview_url: str) -> str | None:
     return f"{BACKEND_URL.rstrip('/')}{preview_url}"
 
 
-def _safe_autorefresh(*, interval_ms: int, key: str) -> None:
-    """Refresh helper compatible with older Streamlit versions."""
-    auto = getattr(st, "autorefresh", None)
-    if callable(auto):
-        auto(interval=interval_ms, key=key)
-        return
-    
-    st.caption("Training in progress... refresh page if status is stale.")

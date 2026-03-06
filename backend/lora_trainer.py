@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+
+from loguru import logger
 import math
 import re
 import time
@@ -112,6 +114,10 @@ def train_lora_for_entity(
     if not dataset_images:
         raise ValueError("Dataset is empty; no preprocessed images found")
 
+    logger.info(
+        "Starting LoRA training: entity_id={} images={} steps={} rank={} lr={}",
+        entity_id, len(dataset_images), steps, rank, learning_rate,
+    )
     version_name = _next_version_name(weights_dir, rank=rank, steps=steps)
     version_dir = weights_dir / version_name
     version_dir.mkdir(parents=True, exist_ok=False)
@@ -207,6 +213,10 @@ def train_lora_for_entity(
     weights_path = version_dir / "pytorch_lora_weights.safetensors"
 
     duration_s = time.time() - started_at
+    logger.info(
+        "LoRA training completed: entity_id={} version={} duration={:.1f}s",
+        entity_id, version_name, duration_s,
+    )
     config = {
         "entity_id": entity_id,
         "trigger_word": trigger_word,
