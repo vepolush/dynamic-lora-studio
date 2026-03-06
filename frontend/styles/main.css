@@ -346,11 +346,20 @@ header[data-testid="stHeader"] {
     padding: 0.2rem 0 0.4rem;
     border-bottom: 1px solid var(--border);
     margin-bottom: 0.6rem;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+}
+
+.session-header .session-title {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .session-header-actions {
     display: flex;
-    gap: 0.35rem;
+    gap: 0.2rem;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
     opacity: 0.4;
     transition: opacity 0.2s ease;
 }
@@ -363,9 +372,11 @@ header[data-testid="stHeader"] {
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 0.9rem;
-    padding: 0.15rem 0.3rem;
+    padding: 0.2rem 0.35rem;
     border-radius: var(--radius-xs);
     transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .session-action-btn:hover {
@@ -385,6 +396,19 @@ header[data-testid="stHeader"] {
 .session-title strong {
     color: var(--text-primary);
     font-weight: 600;
+}
+
+/* Prevent session header buttons from wrapping to next line */
+[data-testid="stHorizontalBlock"]:has(.session-title) {
+    flex-wrap: nowrap !important;
+}
+[data-testid="stHorizontalBlock"]:has(.session-title) > div:first-child {
+    flex-shrink: 1;
+    min-width: 0;
+}
+[data-testid="stHorizontalBlock"]:has(.session-title) > div:not(:first-child) {
+    flex-shrink: 0;
+    min-width: 2.5rem;
 }
 
 /* Prompt info */
@@ -668,6 +692,14 @@ header[data-testid="stHeader"] {
 .like-on-image .stButton > button:hover {
     border-color: var(--accent);
     background: rgba(35, 16, 80, 0.92);
+}
+
+/* Image action buttons (fav + publish) - wider like button, compact vertical column on right */
+[data-testid="column"]:has(.img-action-btns) .stButton > button {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0.35rem;
+    font-size: 1rem;
 }
 
 .msg-prompt {

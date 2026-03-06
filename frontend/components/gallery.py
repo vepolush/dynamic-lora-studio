@@ -104,7 +104,7 @@ def _render_lora_thumb(lora: dict) -> None:
         st.image(thumb_src, use_container_width=True)
 
     st.caption(f"**{name}** · `{trigger}`")
-    st.caption(f"Added {add_count}x")
+    st.caption(f"Added to entities: {add_count}")
 
     col_v, col_a = st.columns(2, gap="small")
     with col_v:
@@ -136,6 +136,7 @@ def _render_lora_thumb(lora: dict) -> None:
 @st.dialog("Gallery LoRA")
 def _show_lora_dialog(lora_id: str) -> None:
     """Show LoRA details as overlay dialog."""
+    item = get_gallery_lora(lora_id)
     if not item:
         st.session_state.pop("gallery_selected_lora_id", None)
         st.rerun()
@@ -155,7 +156,7 @@ def _show_lora_dialog(lora_id: str) -> None:
         st.markdown(f"**Name:** {item.get('name', '')}")
         st.markdown(f"**Trigger:** `{item.get('trigger_word', '')}`")
         st.markdown(f"**Author:** {item.get('author_email', '')}")
-        st.markdown(f"**Added:** {item.get('add_count', 0)}x")
+        st.markdown(f"**Added to entities:** {item.get('add_count', 0)}")
         if item.get("description"):
             st.markdown(f"**Description:** {item.get('description', '')}")
 

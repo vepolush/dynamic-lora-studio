@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
 from typing import Any
 
 import streamlit as st
@@ -11,60 +10,80 @@ import streamlit as st
 from api.client import APIClient, BackendError
 from config import BACKEND_ENABLED
 
-AUTH_COOKIE_NAME = "auth_token"
-AUTH_COOKIE_DAYS = 1
+AUTH_STORAGE_TOKEN = "auth_token"
+AUTH_STORAGE_USERNAME = "auth_user_username"
+
+_AUTH_STORAGE_KEY = "_auth_local_storage"
 
 
-def _get_cookie_manager():
-    """Lazy init CookieManager to avoid import at module load."""
+def _get_local_storage():
+    """Lazy init LocalStorage (singleton) for auth persistence in browser localStorage."""
+    if _AUTH_STORAGE_KEY in st.session_state:
+        return st.session_state[_AUTH_STORAGE_KEY]
     try:
-        import extra_streamlit_components as stx
-        return stx.CookieManager()
+        from streamlit_local_storage import LocalStorage
+        ls = LocalStorage(key="auth_storage_init")
+        st.session_state[_AUTH_STORAGE_KEY] = ls
+        return ls
     except ImportError:
+        return None
+    except Exception:
         return None
 
 
-def _restore_token_from_cookie() -> None:
-    """Restore auth token from cookie to session_state on app load."""
+def _restore_token_from_storage() -> None:
+    """Restore auth token from localStorage to session_state on app load."""
     if "auth_token" in st.session_state:
         return
-    cm = _get_cookie_manager()
-    if not cm:
+    ls = _get_local_storage()
+    if not ls:
         return
     try:
-        cookies = cm.get_all()
-        if isinstance(cookies, dict) and AUTH_COOKIE_NAME in cookies:
-            token = cookies.get(AUTH_COOKIE_NAME)
-            if token and isinstance(token, str):
-                st.session_state["auth_token"] = token
-                if "auth_user_username" not in st.session_state and "auth_user_username" in cookies:
-                    st.session_state["auth_user_username"] = cookies.get("auth_user_username")
+        token = ls.getItem(AUTH_STORAGE_TOKEN)
+        if token and isinstance(token, str) and token.strip():
+            st.session_state["auth_token"] = token
+            if "auth_user_username" not in st.session_state:
+                username = ls.getItem(AUTH_STORAGE_USERNAME)
+                if username and isinstance(username, str):
+                    st.session_state["auth_user_username"] = username
     except Exception:
         pass
 
 
-def _save_token_to_cookie(token: str, username: str | None = None) -> None:
-    """Save auth token to cookie for ~1 day persistence."""
-    cm = _get_cookie_manager()
-    if not cm:
+def _save_token_to_storage(token: str, username: str | None = None) -> None:
+    """Save auth token to localStorage for persistence across page reloads."""
+    ls = _get_local_storage()
+    if not ls:
         return
     try:
-        expires = datetime.utcnow() + timedelta(days=AUTH_COOKIE_DAYS)
-        cm.set(AUTH_COOKIE_NAME, token, expires_at=expires)
+        ls.setItem(AUTH_STORAGE_TOKEN, token, key="auth_set_token")
         if username:
-            cm.set("auth_user_username", username, expires_at=expires)
+            ls.setItem(AUTH_STORAGE_USERNAME, username, key="auth_set_username")
     except Exception:
         pass
 
 
-def _clear_auth_cookie() -> None:
-    """Clear auth cookie on logout."""
-    cm = _get_cookie_manager()
-    if not cm:
+def _schedule_save_to_storage(token: str, username: str | None = None) -> None:
+    """Schedule save to localStorage on next run (avoids rerun killing the component before browser receives it)."""
+    st.session_state["_auth_pending_sync"] = (token, username)
+
+
+def _flush_pending_save_to_storage() -> None:
+    """Run on each app load: persist pending auth to localStorage (in a run without immediate rerun)."""
+    pending = st.session_state.pop("_auth_pending_sync", None)
+    if pending:
+        token, username = pending
+        _save_token_to_storage(token, username)
+
+
+def _clear_auth_storage() -> None:
+    """Clear auth data from localStorage on logout."""
+    ls = _get_local_storage()
+    if not ls:
         return
     try:
-        cm.delete(AUTH_COOKIE_NAME)
-        cm.delete("auth_user_username")
+        ls.deleteItem(AUTH_STORAGE_TOKEN, key="auth_del_token")
+        ls.deleteItem(AUTH_STORAGE_USERNAME, key="auth_del_username")
     except Exception:
         pass
 
@@ -120,7 +139,7 @@ def register(username: str, password: str) -> tuple[dict[str, Any] | None, str |
             st.session_state["auth_token"] = token
             st.session_state["auth_user_username"] = username_val
             st.session_state["auth_user_id"] = data.get("user_id")
-            _save_token_to_cookie(token, username_val)
+            _schedule_save_to_storage(token, username_val)
         return data, None
     except BackendError as e:
         return None, _extract_detail(e)
@@ -139,15 +158,15 @@ def login(username: str, password: str) -> tuple[dict[str, Any] | None, str | No
             st.session_state["auth_token"] = token
             st.session_state["auth_user_username"] = username_val
             st.session_state["auth_user_id"] = data.get("user_id")
-            _save_token_to_cookie(token, username_val)
+            _schedule_save_to_storage(token, username_val)
         return data, None
     except BackendError as e:
         return None, _extract_detail(e)
 
 
 def logout() -> None:
-    """Clear auth state and cookie."""
-    _clear_auth_cookie()
+    """Clear auth state and localStorage."""
+    _clear_auth_storage()
     for key in ("auth_token", "auth_user_username", "auth_user_id"):
         if key in st.session_state:
             del st.session_state[key]

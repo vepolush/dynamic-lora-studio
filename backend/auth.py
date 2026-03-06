@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import secrets
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -16,7 +15,7 @@ from jose import JWTError, jwt
 
 from db import UserModel, session_scope
 
-SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
+SECRET_KEY = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 

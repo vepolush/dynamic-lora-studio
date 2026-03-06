@@ -13,6 +13,7 @@ from db import GalleryLoraModel, UserModel, init_db, session_scope
 from entity_store import (
     _ensure_root,
     create_entity_from_weights,
+    entity_preview_path,
     entity_weights_dir,
     get_entity,
 )
@@ -54,7 +55,7 @@ def publish_lora(
     init_db()
     _ensure_loras_dir()
 
-    entity = get_entity(entity_id)
+    entity = get_entity(entity_id, user_id=user_id)
     if not entity:
         raise FileNotFoundError(f"Entity not found: {entity_id}")
     if entity.get("status") != "ready":
@@ -194,6 +195,13 @@ def add_gallery_lora(lora_id: str, user_id: str) -> dict[str, Any]:
             user_id=user_id,
         )
         row.add_count += 1
+
+        # Copy preview from original entity so the new entity has a thumbnail
+        src_preview = entity_preview_path(row.entity_id)
+        dst_preview = entity_preview_path(new_entity["id"])
+        if src_preview.exists() and src_preview.is_file():
+            shutil.copy2(src_preview, dst_preview)
+            new_entity["preview_url"] = f"/api/entities/{new_entity['id']}/preview"
 
     return {
         "entity": new_entity,
