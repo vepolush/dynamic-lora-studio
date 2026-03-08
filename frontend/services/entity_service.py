@@ -8,7 +8,6 @@ from typing import Any
 from api.client import BackendError
 from config import BACKEND_ENABLED
 from services.auth_service import get_client
-from state.session import MOCK_ENTITIES
 
 
 def get_entity_preview_base64(entity_id: str) -> str | None:
@@ -26,9 +25,9 @@ def get_entity_preview_base64(entity_id: str) -> str | None:
 
 
 def get_entities() -> list[dict[str, Any]] | None:
-    """Fetch entities from backend or return mock data. Returns None on error."""
+    """Fetch entities from backend. Returns None on error, empty list when backend disabled."""
     if not BACKEND_ENABLED:
-        return MOCK_ENTITIES.copy()
+        return []
 
     try:
         client = get_client()
@@ -44,6 +43,7 @@ def upload_entity(
     training_profile: str = "balanced",
     caption_mode: str = "auto",
     filename: str = "images.zip",
+    subject_type: str | None = None,
 ) -> dict[str, Any] | None:
     """Upload ZIP and train entity. Returns new entity on success, None on error."""
     if not BACKEND_ENABLED:
@@ -58,6 +58,7 @@ def upload_entity(
             training_profile=training_profile,
             caption_mode=caption_mode,
             filename=filename,
+            subject_type=subject_type,
         )
     except BackendError as e:
         return {"status": "failed", "error": str(e)}
@@ -68,11 +69,12 @@ def update_entity(
     *,
     name: str | None = None,
     trigger_word: str | None = None,
+    subject_type: str | None = None,
 ) -> dict[str, Any] | None:
-    """Update entity name and/or trigger_word. Returns updated entity on success."""
+    """Update entity name, trigger_word and/or subject_type. Returns updated entity on success."""
     if not BACKEND_ENABLED:
         return None
-    if name is None and trigger_word is None:
+    if name is None and trigger_word is None and subject_type is None:
         return None
 
     try:
@@ -81,6 +83,7 @@ def update_entity(
             entity_id,
             name=name,
             trigger_word=trigger_word,
+            subject_type=subject_type,
         )
     except BackendError:
         return None
@@ -171,3 +174,14 @@ def delete_entity(entity_id: str) -> bool:
         return True
     except BackendError:
         return False
+
+
+def regenerate_entity_preview(entity_id: str) -> dict[str, Any] | None:
+    """Regenerate entity preview image. Returns result dict or None on error."""
+    if not BACKEND_ENABLED:
+        return None
+    try:
+        client = get_client()
+        return client.regenerate_entity_preview(entity_id)
+    except BackendError as e:
+        return {"error": str(e)}

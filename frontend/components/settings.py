@@ -29,7 +29,7 @@ def render_settings() -> None:
     backend_enabled = st.checkbox(
         "Use backend API",
         value=cfg.get("backend_enabled", True),
-        help="When unchecked, app uses mock data only",
+        help="When unchecked, app runs without backend (no sessions, no entities)",
         key="settings_backend_enabled",
     )
 

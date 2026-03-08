@@ -46,6 +46,10 @@ COLORS = [
 
 
 def render_prompt_helper() -> None:
+    if st.session_state.get("_do_reset_prompt_helper"):
+        _apply_reset_and_rerun()
+        return
+
     _refresh_entities_if_needed()
     st.markdown(
         '<div class="prompt-helper-header">'
@@ -59,7 +63,8 @@ def render_prompt_helper() -> None:
     _render_styling_section()
 
     if st.button("Reset", key="prompt_helper_reset", use_container_width=True):
-        _reset_prompt_helper()
+        st.session_state["_do_reset_prompt_helper"] = True
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +113,7 @@ def _render_entities_content() -> None:
     if active_entity:
         versions = active_entity.get("versions", ["v1"])
         image_count = active_entity.get("image_count", 0)
+        entity_status = str(active_entity.get("status", ""))
         st.markdown(
                 f'<div class="entity-detail">'
                 f'<div class="entity-detail-name">{active_entity.get("name", "")}</div>'
@@ -118,25 +124,35 @@ def _render_entities_content() -> None:
                 f"</div></div>",
             unsafe_allow_html=True,
         )
-
         with st.expander("Edit entity", expanded=False):
             edit_name_key = f"entity_edit_name_{active_entity['id']}"
             edit_trigger_key = f"entity_edit_trigger_{active_entity['id']}"
+            edit_subject_type_key = f"entity_edit_subject_type_{active_entity['id']}"
             new_name = st.text_input(
                 "Name",
                 value=active_entity.get("name", ""),
                 key=edit_name_key,
                 placeholder="e.g. My Dog",
+                help="Display name for this entity (e.g. My Dog, Portrait Subject)",
             )
             new_trigger = st.text_input(
                 "Trigger word",
                 value=active_entity.get("trigger_word", ""),
                 key=edit_trigger_key,
                 placeholder="e.g. <my_dog>",
+                help="Unique token to invoke this LoRA in prompts (e.g. <my_dog> or sks_person)",
+            )
+            new_subject_type = st.text_input(
+                "Subject type",
+                value=active_entity.get("subject_type") or "",
+                key=edit_subject_type_key,
+                placeholder="e.g. dog, person, cat",
+                help="Class word for the subject (e.g. cat, person, dog). Include in prompts for better LoRA results.",
             )
             if st.button("Save", key=f"entity_edit_save_{active_entity['id']}", type="primary"):
                 name_val = new_name.strip()
                 trigger_val = new_trigger.strip()
+                subject_type_val = new_subject_type.strip() or None
                 if not name_val or not trigger_val:
                     st.error("Name and trigger word cannot be empty")
                 else:
@@ -145,6 +161,7 @@ def _render_entities_content() -> None:
                         active_entity["id"],
                         name=name_val,
                         trigger_word=trigger_val,
+                        subject_type=subject_type_val,
                     )
                     if updated:
                         for e in st.session_state.get("entities", []):
@@ -163,15 +180,32 @@ def _render_entities_content() -> None:
         if entity_status == "ready" and is_logged_in() and not from_gallery:
             _render_publish_lora_section(active_entity)
 
-        if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
-            from services.entity_service import delete_entity
-            if delete_entity(active_entity["id"]):
-                st.session_state["entities"] = [e for e in st.session_state.get("entities", []) if e["id"] != active_entity["id"]]
-                st.session_state["active_entity_id"] = None
-                st.toast("Entity deleted")
-                st.rerun()
-            else:
-                st.error("Failed to delete entity")
+        col_regen, col_del = st.columns(2, gap="small")
+        with col_regen:
+            if entity_status == "ready" and is_logged_in() and not from_gallery:
+                if st.button("Regenerate preview", key="regenerate_preview_btn", use_container_width=True, help="Generate new preview image"):
+                    from services.entity_service import regenerate_entity_preview
+                    with st.spinner("Regenerating preview..."):
+                        result = regenerate_entity_preview(active_entity["id"])
+                    if result and "error" not in result:
+                        for e in st.session_state.get("entities", []):
+                            if e["id"] == active_entity["id"]:
+                                e["preview_url"] = result.get("preview_url", "")
+                                break
+                        st.toast("Preview regenerated!")
+                        st.rerun()
+                    else:
+                        st.error(result.get("error", "Failed to regenerate preview"))
+        with col_del:
+            if st.button("Delete entity", key="delete_entity_btn", type="secondary", use_container_width=True):
+                from services.entity_service import delete_entity
+                if delete_entity(active_entity["id"]):
+                    st.session_state["entities"] = [e for e in st.session_state.get("entities", []) if e["id"] != active_entity["id"]]
+                    st.session_state["active_entity_id"] = None
+                    st.toast("Entity deleted")
+                    st.rerun()
+                else:
+                    st.error("Failed to delete entity")
 
         if len(versions) > 1:
             active_ver = active_entity.get("active_version", versions[0])
@@ -183,16 +217,18 @@ def _render_entities_content() -> None:
                 key="entity_version_select",
             )
 
-    lora_val = st.session_state.get("lora_strength_slider", st.session_state.get("lora_strength", 0.8))
+    version = st.session_state.get("_prompt_helper_version", 0)
+    lora_key = f"lora_strength_slider_v{version}"
+    lora_val = st.session_state.get(lora_key, st.session_state.get("lora_strength", 0.8))
     st.slider(
         "LoRA Strength",
         min_value=0.0,
         max_value=1.5,
         value=lora_val,
         step=0.05,
-        key="lora_strength_slider",
+        key=lora_key,
     )
-    st.session_state["lora_strength"] = st.session_state.get("lora_strength_slider", lora_val)
+    st.session_state["lora_strength"] = st.session_state.get(lora_key, lora_val)
 
     if st.session_state.get("show_entity_form", False):
         _render_entity_form()
@@ -489,14 +525,13 @@ def _render_entity_grid(entities: list[dict], active_id: str | None) -> None:
                                 use_container_width=True,
                             ):
                                 st.session_state["active_entity_id"] = None if is_active else entity["id"]
-                                if not is_active:
-                                    versions = entity.get("versions", [])
-                                    if versions:
-                                        st.session_state["entity_version_select"] = entity.get("active_version") or versions[-1]
+                                st.session_state["show_entity_form"] = False  # Close Add New when selecting
+                                # Don't set entity_version_select here — selectbox uses index= from entity
                                 st.rerun()
                 else:
                     st.markdown('<div class="entity-tile-add">', unsafe_allow_html=True)
                     if st.button("+\nAdd New", key="add_entity_tile", use_container_width=True):
+                        st.session_state["active_entity_id"] = None  # Deselect when opening Add New
                         st.session_state["show_entity_form"] = not st.session_state.get(
                             "show_entity_form", False
                         )
@@ -609,8 +644,24 @@ def _render_entity_form() -> None:
         "</div>",
         unsafe_allow_html=True,
     )
-    st.text_input("Entity name", key="new_entity_name", placeholder="e.g. My Dog")
-    st.text_input("Trigger word", key="new_entity_trigger", placeholder="e.g. <my_dog>")
+    st.text_input(
+        "Entity name",
+        key="new_entity_name",
+        placeholder="e.g. My Dog",
+        help="Display name for this entity (e.g. My Dog, Portrait Subject)",
+    )
+    st.text_input(
+        "Trigger word",
+        key="new_entity_trigger",
+        placeholder="e.g. <my_dog>",
+        help="Unique token to invoke this LoRA in prompts (e.g. <my_dog> or sks_person)",
+    )
+    st.text_input(
+        "Subject type",
+        key="new_entity_subject_type",
+        placeholder="e.g. dog, person, cat",
+        help="Class word for the subject (e.g. cat, person, dog). Include in prompts for better LoRA results.",
+    )
     st.file_uploader(
         "Training images (ZIP)",
         type=["zip"],
@@ -658,10 +709,8 @@ def _render_entity_form() -> None:
     )
     col_train, col_cancel = st.columns(2, gap="small")
     with col_train:
-        st.markdown('<div class="generate-btn">', unsafe_allow_html=True)
-        if st.button("Upload & Train", key="upload_train_btn", use_container_width=True):
+        if st.button("Upload & Train", key="upload_train_btn", use_container_width=True, type="primary"):
             _handle_entity_upload()
-        st.markdown("</div>", unsafe_allow_html=True)
     with col_cancel:
         if st.button("Cancel", key="cancel_entity_form", use_container_width=True):
             st.session_state["show_entity_form"] = False
@@ -675,6 +724,7 @@ def _do_upload(
     filename: str,
     training_profile: str,
     caption_mode: str,
+    subject_type: str | None = None,
 ) -> None:
     from services.entity_service import upload_entity
 
@@ -686,6 +736,7 @@ def _do_upload(
             training_profile=training_profile,
             caption_mode=caption_mode,
             filename=filename,
+            subject_type=subject_type,
         )
     if entity and entity.get("id"):
         st.session_state["entities"] = [entity] + st.session_state.get("entities", [])
@@ -702,6 +753,7 @@ def _do_upload(
 def _handle_entity_upload() -> None:
     name = st.session_state.get("new_entity_name", "").strip()
     trigger = st.session_state.get("new_entity_trigger", "").strip()
+    subject_type = st.session_state.get("new_entity_subject_type", "").strip() or None
     training_profile = st.session_state.get("entity_training_profile", "balanced")
     caption_mode_label = st.session_state.get("entity_caption_mode", "Auto")
     zip_file = st.session_state.get("entity_zip_upload")
@@ -721,6 +773,7 @@ def _handle_entity_upload() -> None:
             name, trigger, cropped_zip,
             cropped_filename or "cropped.zip",
             training_profile, caption_mode,
+            subject_type=subject_type,
         )
         st.session_state.pop("entity_cropped_zip", None)
         st.session_state.pop("entity_cropped_filename", None)
@@ -730,6 +783,7 @@ def _handle_entity_upload() -> None:
             name, trigger, zip_bytes,
             zip_file.name or "images.zip",
             training_profile, caption_mode,
+            subject_type=subject_type,
         )
     else:
         st.error("Upload a ZIP file or use Preview & Crop first")
@@ -769,6 +823,7 @@ def _render_technical_section() -> None:
             value=settings.get("guidance_scale", 7.5),
             step=0.5,
             key="guidance_slider",
+            help="How closely to follow the prompt. Higher = stricter adherence, lower = more creative.",
         )
 
         size_val = settings.get("image_size", "512x512")
@@ -850,24 +905,27 @@ def _render_styling_section() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _reset_prompt_helper() -> None:
+def _apply_reset_and_rerun() -> None:
+    """Apply reset before any widgets are rendered. Call from start of render_prompt_helper."""
     from state.session import DEFAULT_SETTINGS
     ds = DEFAULT_SETTINGS
     st.session_state["generation_settings"] = {**ds}
     st.session_state["active_entity_id"] = None
     st.session_state["lora_strength"] = 0.8
-    st.session_state["lora_strength_slider"] = 0.8
-    st.session_state["steps_slider"] = ds["steps"]
-    st.session_state["guidance_slider"] = ds["guidance_scale"]
-    st.session_state["size_select"] = ds["image_size"]
-    st.session_state["seed_input"] = ds["seed"]
-    st.session_state["num_images_input"] = ds["num_images"]
-    st.session_state["quality_slider"] = ds["quality"]
-    st.session_state["scheduler_select"] = "Auto"
-    st.session_state["style_select"] = ds["style"]
-    st.session_state["lightning_select"] = ds["lightning"]
-    st.session_state["color_select"] = ds["color"]
-    st.session_state["negative_prompt_input"] = ds["negative_prompt"]
+    # Set widget values so they render with defaults (avoids modifying after instantiation)
+    st.session_state["steps_slider"] = ds.get("steps", 0)
+    st.session_state["guidance_slider"] = ds.get("guidance_scale", 7.5)
+    st.session_state["size_select"] = ds.get("image_size", "512x512")
+    st.session_state["seed_input"] = ds.get("seed", -1)
+    st.session_state["num_images_input"] = ds.get("num_images", 1)
+    st.session_state["quality_slider"] = ds.get("quality", "Normal")
+    st.session_state["scheduler_select"] = ds.get("scheduler", "Auto")
+    st.session_state["style_select"] = ds.get("style", "None")
+    st.session_state["lightning_select"] = ds.get("lightning", "None")
+    st.session_state["color_select"] = ds.get("color", "Default")
+    st.session_state["negative_prompt_input"] = ds.get("negative_prompt", "")
+    st.session_state["_prompt_helper_version"] = st.session_state.get("_prompt_helper_version", 0) + 1
+    st.session_state["_do_reset_prompt_helper"] = False
     st.rerun()
 
 
@@ -920,14 +978,17 @@ def build_helper_specs() -> str:
 
 
 def build_effective_prompt(user_prompt: str) -> str:
-    """Build prompt with entity trigger prefix if active."""
+    """Build prompt with entity trigger prefix (and subject_type if set) if active."""
     entity = _get_active_entity()
     if entity:
         trigger = entity.get("trigger_word", "")
-        if trigger and user_prompt.strip():
-            return f"{trigger} {user_prompt.strip()}"
-        if trigger:
-            return trigger
+        subject_type = entity.get("subject_type") or ""
+        if not trigger:
+            return user_prompt.strip()
+        prefix = f"{trigger} {subject_type}".strip() if subject_type else trigger
+        if user_prompt.strip():
+            return f"{prefix} {user_prompt.strip()}"
+        return prefix
     return user_prompt.strip()
 
 

@@ -346,14 +346,14 @@ def _render_message_images(
             if img_src:
                 key_safe = "".join(c if c.isalnum() else "_" for c in f"{session_id}_{filename or i}")
                 is_published = filename in published_filenames
-                img_col, btn_col = st.columns([3, 1], gap="small")
-                with img_col:
+                row_cols = st.columns([3, 1], gap="small")
+                with row_cols[0]:
                     st.image(
                         img_src,
                         width=max_img_width,
                         caption=f"seed: {seed}",
                     )
-                with btn_col:
+                with row_cols[1]:
                     if filename:
                         is_fav = filename in fav_filenames
                         if st.button("♥" if is_fav else "♡", key=f"fav_img_{key_safe}", help="Toggle favourite"):
@@ -417,7 +417,7 @@ def _render_prompt_input(session: dict) -> None:
                 quality=settings.get("quality", "Normal"),
                 entity_id=st.session_state.get("active_entity_id"),
                 entity_version=st.session_state.get("entity_version_select"),
-                lora_strength=st.session_state.get("lora_strength_slider", st.session_state.get("lora_strength", 0.8)),
+                lora_strength=st.session_state.get("lora_strength", 0.8),
                 style=settings.get("style"),
                 lighting=settings.get("lightning"),
                 color=settings.get("color"),

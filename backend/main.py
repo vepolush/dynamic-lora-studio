@@ -160,6 +160,7 @@ class GenerateRequest(BaseModel):
 class UpdateEntityRequest(BaseModel):
     name: str | None = None
     trigger_word: str | None = None
+    subject_type: str | None = None
 
 
 class RemoveDatasetRequest(BaseModel):
@@ -526,7 +527,48 @@ def get_entity_preview(entity_id: str, user=Depends(get_current_user)):
     data = load_entity_preview_bytes(entity_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Entity preview not found")
-    return Response(content=data, media_type="image/png")
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
+@app.post("/api/entities/{entity_id}/regenerate-preview")
+def regenerate_entity_preview(entity_id: str, user=Depends(require_auth)):
+    """Regenerate entity preview image using LoRA."""
+    entity = store_get_entity(entity_id, user_id=user["user_id"])
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    if entity.get("status") != "ready":
+        raise HTTPException(status_code=400, detail="Entity must be trained (ready) to regenerate preview")
+    if entity.get("source_gallery_lora_id"):
+        raise HTTPException(status_code=400, detail="Cannot regenerate preview for entities added from gallery")
+    trigger_word = entity.get("trigger_word", "")
+    subject_type = entity.get("subject_type") or None
+    versions = entity.get("versions", ["v1"])
+    version = entity.get("active_version") or (versions[-1] if versions else "v1")
+    try:
+        preview_url = training_queue._generate_entity_preview(
+            entity_id=entity_id,
+            trigger_word=trigger_word,
+            version=version,
+            subject_type=subject_type,
+        )
+        update_entity_metadata(
+            entity_id,
+            {"preview_url": preview_url, "preview_error": None},
+            user_id=user["user_id"],
+        )
+        return {"preview_url": preview_url}
+    except Exception as e:
+        logger.warning("Preview regeneration failed for {}: {}", entity_id, e)
+        update_entity_metadata(
+            entity_id,
+            {"preview_error": str(e)},
+            user_id=user["user_id"],
+        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/entities/{entity_id}/dataset")
@@ -574,6 +616,7 @@ def upload_entity(
     user=Depends(require_auth),
     training_profile: str = Form("balanced"),
     caption_mode: str = Form("auto"),
+    subject_type: str = Form(""),
     file: UploadFile = File(...),
 ):
     clean_name = name.strip()
@@ -630,6 +673,7 @@ def upload_entity(
             uploaded_filename=file.filename,
             temp_zip_path=tmp_path,
             user_id=user["user_id"],
+            subject_type=subject_type.strip() or None,
         )
         entity_id = str(entity["id"])
         raw_metadata = get_entity_metadata(entity_id)
@@ -926,6 +970,8 @@ def update_entity(entity_id: str, req: UpdateEntityRequest, user=Depends(get_cur
         if not clean_trigger:
             raise HTTPException(status_code=400, detail="Field 'trigger_word' cannot be empty")
         updates["trigger_word"] = clean_trigger
+    if req.subject_type is not None:
+        updates["subject_type"] = req.subject_type.strip() or None
 
     if not updates:
         return entity

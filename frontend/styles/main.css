@@ -745,6 +745,15 @@ header[data-testid="stHeader"] {
     text-align: center;
 }
 
+/* Chat image row: image left, buttons right — prevent vertical stacking */
+[data-testid="stHorizontalBlock"]:has([data-testid="stImage"]) {
+    flex-wrap: nowrap !important;
+}
+[data-testid="stHorizontalBlock"]:has([data-testid="stImage"]) > div:last-child {
+    min-width: 48px;
+    flex-shrink: 0;
+}
+
 
 /* ============================
    RIGHT PANEL — Prompt Helper
@@ -1173,6 +1182,14 @@ header[data-testid="stHeader"] {
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 0.2rem;
+}
+
+/* Entity form: Upload & Train / Cancel — same height and alignment */
+[data-testid="stExpander"]:has(.entity-form-wrapper) [data-testid="stHorizontalBlock"] .stButton > button {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 

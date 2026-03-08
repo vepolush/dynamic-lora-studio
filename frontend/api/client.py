@@ -178,6 +178,10 @@ class APIClient:
         """Fetch entity preview image as bytes. Returns None if not found."""
         return self._get_bytes(f"/api/entities/{entity_id}/preview", timeout=QUICK_TIMEOUT)
 
+    def regenerate_entity_preview(self, entity_id: str) -> dict[str, Any]:
+        """Regenerate entity preview image. Returns dict with preview_url or raises BackendError."""
+        return self._request("POST", f"/api/entities/{entity_id}/regenerate-preview", timeout=60)  # type: ignore
+
     def get_session_image_bytes(self, session_id: str, filename: str) -> bytes | None:
         """Fetch session image as bytes. Returns None if not found."""
         return self._get_bytes(f"/api/images/{session_id}/{filename}", timeout=QUICK_TIMEOUT)
@@ -231,17 +235,21 @@ class APIClient:
         training_profile: str = "balanced",
         caption_mode: str = "auto",
         filename: str = "images.zip",
+        subject_type: str | None = None,
     ) -> dict[str, Any]:
         files = {"file": (filename, zip_bytes, "application/zip")}
+        payload: dict[str, Any] = {
+            "name": name,
+            "trigger_word": trigger_word,
+            "training_profile": training_profile,
+            "caption_mode": caption_mode,
+        }
+        if subject_type:
+            payload["subject_type"] = subject_type
         data = self._request(
             "POST",
             "/api/entities",
-            data={
-                "name": name,
-                "trigger_word": trigger_word,
-                "training_profile": training_profile,
-                "caption_mode": caption_mode,
-            },
+            data=payload,
             files=files,
             timeout=ENTITY_UPLOAD_TIMEOUT,
         )  # type: ignore
@@ -261,12 +269,15 @@ class APIClient:
         *,
         name: str | None = None,
         trigger_word: str | None = None,
+        subject_type: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {}
         if name is not None:
             payload["name"] = name
         if trigger_word is not None:
             payload["trigger_word"] = trigger_word
+        if subject_type is not None:
+            payload["subject_type"] = subject_type
         return self._request("PUT", f"/api/entities/{entity_id}", json=payload, timeout=QUICK_TIMEOUT)  # type: ignore
 
     def get_entity_dataset(self, entity_id: str) -> list[dict[str, Any]]:
@@ -274,15 +285,9 @@ class APIClient:
         return data.get("images", []) if isinstance(data, dict) else []
 
     def get_dataset_image_bytes(self, entity_id: str, filename: str) -> bytes | None:
-        url = f"{self.base_url}/api/entities/{entity_id}/dataset/{filename}"
-        try:
-            with httpx.Client(timeout=QUICK_TIMEOUT) as client:
-                response = client.get(url)
-                if response.status_code != 200:
-                    return None
-                return response.content
-        except (httpx.ConnectError, httpx.TimeoutException):
-            return None
+        from urllib.parse import quote
+        path = f"/api/entities/{entity_id}/dataset/{quote(filename, safe='')}"
+        return self._get_bytes(path, timeout=QUICK_TIMEOUT)
 
     def remove_dataset_images(self, entity_id: str, filenames: list[str]) -> dict[str, Any]:
         return self._request(

@@ -6,53 +6,6 @@ from datetime import datetime
 
 import streamlit as st
 
-MOCK_SESSIONS: list[dict] = [
-    {
-        "id": "sess_001",
-        "title": "3D sphere",
-        "created_at": "2026-02-26T12:00:00",
-        "message_count": 2,
-        "favourite": False,
-    },
-    {
-        "id": "sess_002",
-        "title": "Portrait study",
-        "created_at": "2026-02-25T18:30:00",
-        "message_count": 1,
-        "favourite": True,
-    },
-    {
-        "id": "sess_003",
-        "title": "Landscape",
-        "created_at": "2026-02-24T09:15:00",
-        "message_count": 3,
-        "favourite": True,
-    },
-]
-
-MOCK_ENTITIES: list[dict] = [
-    {
-        "id": "entity_01_my_cat",
-        "name": "My Cat",
-        "trigger_word": "<my_cat>",
-        "has_lora": True,
-        "versions": ["v1_rank8_steps500", "v2_rank16_steps800"],
-        "active_version": "v2_rank16_steps800",
-        "image_count": 12,
-        "created_at": "2026-02-20",
-    },
-    {
-        "id": "entity_02_cyber_helmet",
-        "name": "Cyber Helmet",
-        "trigger_word": "<cyber_helmet>",
-        "has_lora": True,
-        "versions": ["v1_rank8_steps600"],
-        "active_version": "v1_rank8_steps600",
-        "image_count": 8,
-        "created_at": "2026-02-22",
-    },
-]
-
 DEFAULT_SETTINGS: dict = {
     "steps": 0,
     "guidance_scale": 7.5,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import random
 
 from loguru import logger
 import threading
@@ -177,11 +178,14 @@ class TrainingQueueManager:
                 )
                 preview_url = None
                 preview_error = None
+                raw_meta = get_entity_metadata(job.entity_id) or {}
+                subject_type = raw_meta.get("subject_type")
                 try:
                     preview_url = self._generate_entity_preview(
                         entity_id=job.entity_id,
                         trigger_word=job.trigger_word,
                         version=version,
+                        subject_type=subject_type,
                     )
                 except Exception as exc:
                     preview_error = str(exc)
@@ -222,20 +226,26 @@ class TrainingQueueManager:
         entity_id: str,
         trigger_word: str,
         version: str,
+        subject_type: str | None = None,
     ) -> str:
-        prompt = f"studio portrait of {trigger_word}, detailed, clean background"
+        if subject_type and subject_type.strip():
+            prompt = f"a photo of {trigger_word} {subject_type.strip()}, studio portrait, detailed, clean background"
+        else:
+            prompt = f"a photo of {trigger_word}, studio portrait, detailed, clean background"
+        seed = random.randint(0, 2**31 - 1)
+        logger.info("Generating preview: entity_id={} version={} trigger={!r}", entity_id, version, trigger_word)
         results = ml_manager.generate(
             prompt=prompt,
             steps=24,
             guidance_scale=7.0,
             width=512,
             height=512,
-            seed=42,
+            seed=seed,
             num_images=1,
             scheduler="dpm++_2m_karras",
             entity_id=entity_id,
             entity_version=version,
-            lora_strength=0.9,
+            lora_strength=1.3,
         )
         if not results:
             raise RuntimeError("Preview generation returned no images")

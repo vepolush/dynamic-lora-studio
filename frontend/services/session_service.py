@@ -1,16 +1,13 @@
-"""Session service — fetch/create/update sessions from backend or mock."""
+"""Session service — fetch/create/update sessions from backend."""
 
 from __future__ import annotations
 
 import base64
-import uuid
-from datetime import datetime
 from typing import Any
 
 from api.client import BackendError
 from config import BACKEND_ENABLED
 from services.auth_service import get_client
-from state.session import MOCK_SESSIONS
 
 
 def get_session_image_base64(session_id: str, filename: str) -> str | None:
@@ -27,27 +24,15 @@ def get_session_image_base64(session_id: str, filename: str) -> str | None:
         return None
 
 
-def _make_local_session(title: str) -> dict[str, Any]:
-    """Create session dict for local/mock mode."""
-    return {
-        "id": f"sess_{uuid.uuid4().hex[:12]}",
-        "title": title,
-        "created_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
-        "messages": [],
-        "message_count": 0,
-        "favourite": False,
-    }
-
-
 def get_sessions() -> list[dict[str, Any]]:
-    """Fetch sessions from backend or return mock data."""
+    """Fetch sessions from backend. Returns empty list when backend disabled or on error."""
     if not BACKEND_ENABLED:
-        return MOCK_SESSIONS.copy()
+        return []
     try:
         client = get_client()
         return client.get_sessions()
     except BackendError:
-        return MOCK_SESSIONS.copy()
+        return []
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:
@@ -62,9 +47,9 @@ def get_session(session_id: str) -> dict[str, Any] | None:
 
 
 def create_session(title: str = "New session") -> dict[str, Any] | None:
-    """Create a new session via backend or locally when backend disabled."""
+    """Create a new session via backend. Returns None when backend disabled."""
     if not BACKEND_ENABLED:
-        return _make_local_session(title)
+        return None
     try:
         client = get_client()
         return client.create_session(title=title)

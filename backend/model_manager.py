@@ -108,6 +108,7 @@ class ModelManager:
             return
 
         self.pipe.unload_lora_weights()
+        logger.info("Loading LoRA: path={}", lora_path)
         self.pipe.load_lora_weights(lora_path)
         self._active_lora_key = lora_key
 

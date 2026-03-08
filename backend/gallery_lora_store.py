@@ -215,7 +215,6 @@ def add_gallery_lora(lora_id: str, user_id: str) -> dict[str, Any]:
         )
         row.add_count += 1
 
-        # Copy preview from original entity so the new entity has a thumbnail
         src_preview = entity_preview_path(row.entity_id)
         dst_preview = entity_preview_path(new_entity["id"])
         if src_preview.exists() and src_preview.is_file():

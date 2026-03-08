@@ -28,7 +28,7 @@ def render_my_images() -> None:
         unsafe_allow_html=True,
     )
 
-    col_all, col_fav, col_arch = st.columns(3)
+    col_all, col_fav = st.columns(2)
     with col_all:
         if st.button("All", key="filter_all", use_container_width=True):
             st.session_state["images_filter"] = "all"
@@ -37,15 +37,11 @@ def render_my_images() -> None:
         if st.button(f"Favourite ({get_favourite_images_count()})", key="filter_fav", use_container_width=True):
             st.session_state["images_filter"] = "favourite"
             st.rerun()
-    with col_arch:
-        if st.button("Archived", key="filter_arch", use_container_width=True):
-            st.session_state["images_filter"] = "archived"
-            st.rerun()
 
     if filter_type == "favourite":
         _render_favourite_images(sessions)
     else:
-        filtered = _filter_sessions(sessions, filter_type)
+        filtered = _filter_sessions(sessions, "all")
         if not filtered:
             st.info("No images yet. Generate some on the Generate page.")
             return

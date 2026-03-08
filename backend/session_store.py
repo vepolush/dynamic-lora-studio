@@ -75,7 +75,7 @@ def get_session(session_id: str, user_id: str | None = None) -> dict[str, Any] |
                 return None
         else:
             if row.user_id is not None:
-                return None  # Anonymous: only legacy sessions
+                return None
         return row.to_dict()
 
 
@@ -89,7 +89,7 @@ def list_sessions(user_id: str | None = None) -> list[dict[str, Any]]:
         if user_id is not None:
             q = q.filter(or_(SessionModel.user_id == user_id, SessionModel.user_id.is_(None)))
         else:
-            q = q.filter(SessionModel.user_id.is_(None))  # Anonymous: only legacy sessions
+            q = q.filter(SessionModel.user_id.is_(None))
         rows = q.all()
         for row in rows:
             msg_count = len(row.messages)

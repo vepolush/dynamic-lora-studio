@@ -79,6 +79,7 @@ def _entity_to_dict(row: EntityModel) -> dict[str, Any]:
         "preview_url": row.preview_url,
         "versions": [],
         "source_gallery_lora_id": getattr(row, "source_gallery_lora_id", None),
+        "subject_type": getattr(row, "subject_type", None),
     }
 
 
@@ -116,6 +117,7 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
         "has_lora": bool(versions),
         "image_count": int(metadata.get("image_count", 0)),
         "source_gallery_lora_id": metadata.get("source_gallery_lora_id"),
+        "subject_type": metadata.get("subject_type"),
     }
 
 
@@ -193,10 +195,34 @@ def load_entity_preview_bytes(entity_id: str) -> bytes | None:
 
 
 def list_dataset_images(entity_id: str) -> list[dict[str, Any]]:
-    ds_dir = entity_dataset_dir(entity_id)
+    """List dataset images. Prefer manifest when present; fallback to glob."""
+    entity_dir = _entity_dir(entity_id)
+    ds_dir = entity_dir / "dataset"
     if not ds_dir.exists():
         return []
-    result: list[dict[str, Any]] = []
+    manifest_path = entity_dir / "dataset_manifest.json"
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            images = manifest.get("images", [])
+            result: list[dict[str, Any]] = []
+            for img in images:
+                fname = img.get("filename", "")
+                if not fname or not isinstance(fname, str):
+                    continue
+                p = ds_dir / fname
+                if p.exists() and p.is_file() and p.suffix.lower() == ".png":
+                    try:
+                        size = p.stat().st_size
+                    except OSError:
+                        size = 0
+                    result.append({"filename": fname, "size": size})
+            if result:
+                return result
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+    result = []
     for p in sorted(ds_dir.glob("*.png")):
         if p.is_file():
             try:
@@ -208,15 +234,31 @@ def list_dataset_images(entity_id: str) -> list[dict[str, Any]]:
 
 
 def load_dataset_image_bytes(entity_id: str, filename: str) -> bytes | None:
+    """Load dataset image. Handles URL decoding and path safety."""
+    from urllib.parse import unquote
+
     ds_dir = entity_dataset_dir(entity_id)
+    if not ds_dir.exists():
+        return None
+    filename = unquote(filename)
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return None
     path = ds_dir / filename
-    if not path.exists() or not path.is_file() or path.suffix.lower() != ".png":
-        return None
-    try:
-        with open(path, "rb") as f:
-            return f.read()
-    except OSError:
-        return None
+    if path.exists() and path.is_file() and path.suffix.lower() == ".png":
+        try:
+            with open(path, "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+    fname_lower = filename.lower()
+    for p in ds_dir.iterdir():
+        if p.is_file() and p.suffix.lower() == ".png" and p.name.lower() == fname_lower:
+            try:
+                with open(p, "rb") as f:
+                    return f.read()
+            except OSError:
+                return None
+    return None
 
 
 def update_entity_metadata(
@@ -253,6 +295,7 @@ def create_entity(
     uploaded_filename: str,
     temp_zip_path: Path,
     user_id: str | None = None,
+    subject_type: str | None = None,
 ) -> dict[str, Any]:
     _ensure_root()
     init_db()
@@ -281,6 +324,7 @@ def create_entity(
             created_at=now,
             image_count=0,
             uploaded_zip_path=str(saved_zip_path),
+            subject_type=subject_type.strip() if subject_type and isinstance(subject_type, str) else None,
         )
         session.add(entity)
 
@@ -296,7 +340,7 @@ def create_entity_from_weights(
     user_id: str | None = None,
     source_gallery_lora_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create entity from copied LoRA weights (e.g. from gallery). No dataset."""
+    """Create entity from copied LoRA weights from gallery. No dataset."""
     _ensure_root()
     init_db()
     now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
