@@ -88,7 +88,7 @@ def _apply_message_settings(settings: dict) -> None:
 
     st.session_state["scheduler_select"] = _scheduler_display_from_key(settings.get("scheduler"))
     st.session_state["style_select"] = settings.get("style") or "None"
-    st.session_state["lightning_select"] = settings.get("lighting") or "None"
+    st.session_state["lighting_select"] = settings.get("lighting") or "None"
     st.session_state["color_select"] = settings.get("color") or "Default"
 
     st.session_state["generation_settings"] = {
@@ -100,7 +100,7 @@ def _apply_message_settings(settings: dict) -> None:
         "num_images": st.session_state.get("num_images_input", 1),
         "quality": st.session_state.get("quality_slider", "Normal"),
         "style": st.session_state.get("style_select", "None"),
-        "lightning": st.session_state.get("lightning_select", "None"),
+        "lighting": st.session_state.get("lighting_select", "None"),
         "color": st.session_state.get("color_select", "Default"),
         "scheduler": st.session_state.get("scheduler_select", "Auto"),
     }

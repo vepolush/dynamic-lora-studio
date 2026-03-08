@@ -889,8 +889,8 @@ def _render_styling_section() -> None:
         st.selectbox(
             "Lighting",
             LIGHTINGS,
-            index=LIGHTINGS.index(settings.get("lightning", "None")),
-            key="lightning_select",
+            index=LIGHTINGS.index(settings.get("lighting", "None")),
+            key="lighting_select",
         )
 
         st.selectbox(
@@ -921,7 +921,7 @@ def _apply_reset_and_rerun() -> None:
     st.session_state["quality_slider"] = ds.get("quality", "Normal")
     st.session_state["scheduler_select"] = ds.get("scheduler", "Auto")
     st.session_state["style_select"] = ds.get("style", "None")
-    st.session_state["lightning_select"] = ds.get("lightning", "None")
+    st.session_state["lighting_select"] = ds.get("lighting", "None")
     st.session_state["color_select"] = ds.get("color", "Default")
     st.session_state["negative_prompt_input"] = ds.get("negative_prompt", "")
     st.session_state["_prompt_helper_version"] = st.session_state.get("_prompt_helper_version", 0) + 1
@@ -935,7 +935,7 @@ def get_current_settings() -> dict:
     gs = st.session_state.get("generation_settings", {})
     defaults = {
         "steps": 0, "guidance_scale": 7.5, "image_size": "512x512",
-        "seed": -1, "quality": "Normal", "style": "None", "lightning": "None",
+        "seed": -1, "quality": "Normal", "style": "None", "lighting": "None",
         "color": "Default", "scheduler": "Auto", "num_images": 1,
         "negative_prompt": "",
     }
@@ -950,7 +950,7 @@ def get_current_settings() -> dict:
         "seed": st.session_state.get("seed_input", gs.get("seed", defaults["seed"])),
         "quality": st.session_state.get("quality_slider", gs.get("quality", defaults["quality"])),
         "style": st.session_state.get("style_select", gs.get("style", defaults["style"])),
-        "lightning": st.session_state.get("lightning_select", gs.get("lightning", defaults["lightning"])),
+        "lighting": st.session_state.get("lighting_select", gs.get("lighting", defaults["lighting"])),
         "color": st.session_state.get("color_select", gs.get("color", defaults["color"])),
         "scheduler": scheduler_key or None,
         "num_images": st.session_state.get("num_images_input", gs.get("num_images", defaults["num_images"])),
@@ -964,8 +964,8 @@ def build_helper_specs() -> str:
     parts = []
     if settings.get("style") and settings["style"] != "None":
         parts.append(f"style={settings['style']}")
-    if settings.get("lightning") and settings["lightning"] != "None":
-        parts.append(f"lighting={settings['lightning']}")
+    if settings.get("lighting") and settings["lighting"] != "None":
+        parts.append(f"lighting={settings['lighting']}")
     if settings.get("color") and settings["color"] != "Default":
         parts.append(f"color={settings['color']}")
     entity = _get_active_entity()

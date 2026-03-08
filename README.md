@@ -73,7 +73,7 @@ In Settings, set Backend URL to `http://localhost:8000` (default).
 
 ```bash
 cd /workspace
-git clone https://github.com/YOUR_USER/dynamic-lora-studio.git
+git clone https://github.com/vepolush/dynamic-lora-studio.git
 cd dynamic-lora-studio
 ```
 
@@ -172,4 +172,4 @@ python -m pytest tests/ -v
 ```
 
 - `tests/test_dataset_prep.py` — dataset validation, path traversal, ZIP handling
-- `tests/test_api.py` — health, auth (requires backend deps)
+- `tests/test_api.py` — health, auth, generation API (requires backend deps)

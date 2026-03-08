@@ -13,7 +13,7 @@ DEFAULT_SETTINGS: dict = {
     "seed": -1,
     "quality": "Normal",
     "style": "None",
-    "lightning": "None",
+    "lighting": "None",
     "color": "Default",
     "scheduler": "Auto",
     "num_images": 1,
