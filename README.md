@@ -146,6 +146,15 @@ dynamic-lora-studio/
 │   ├── components/       # Sidebar, workspace, prompt_helper, settings
 │   ├── services/         # API clients
 │   └── state/            # Session state
+├── experiments/           # Diploma experiment scripts
+│   ├── exp1_lora_vs_no_lora.py
+│   ├── exp2_dataset_size.py
+│   ├── exp3_hyperparams.py
+│   ├── exp4_timing.py
+│   ├── exp5_switch_speed.py
+│   └── utils.py
+├── docs/
+│   └── experiments.md    # Experiment methodology
 ├── start.sh              # RunPod startup script
 └── README.md
 ```
