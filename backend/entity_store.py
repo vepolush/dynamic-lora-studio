@@ -78,6 +78,7 @@ def _entity_to_dict(row: EntityModel) -> dict[str, Any]:
         "uploaded_zip_path": row.uploaded_zip_path,
         "preview_url": row.preview_url,
         "versions": [],
+        "source_gallery_lora_id": getattr(row, "source_gallery_lora_id", None),
     }
 
 
@@ -114,7 +115,22 @@ def _normalize_entity(metadata: dict[str, Any]) -> dict[str, Any]:
         "created_at": str(metadata.get("created_at", "")),
         "has_lora": bool(versions),
         "image_count": int(metadata.get("image_count", 0)),
+        "source_gallery_lora_id": metadata.get("source_gallery_lora_id"),
     }
+
+
+def user_has_entity_from_gallery_lora(user_id: str, gallery_lora_id: str) -> bool:
+    """Check if user already has an entity created from this gallery LoRA."""
+    init_db()
+    with session_scope() as session:
+        from sqlalchemy import and_
+        row = session.query(EntityModel).filter(
+            and_(
+                EntityModel.user_id == user_id,
+                EntityModel.source_gallery_lora_id == gallery_lora_id,
+            ),
+        ).first()
+        return row is not None
 
 
 def list_entities(user_id: str | None = None) -> list[dict[str, Any]]:
@@ -278,6 +294,7 @@ def create_entity_from_weights(
     trigger_word: str,
     source_weights_dir: Path,
     user_id: str | None = None,
+    source_gallery_lora_id: str | None = None,
 ) -> dict[str, Any]:
     """Create entity from copied LoRA weights (e.g. from gallery). No dataset."""
     _ensure_root()
@@ -309,6 +326,7 @@ def create_entity_from_weights(
             created_at=now,
             image_count=0,
             active_version=version_name,
+            source_gallery_lora_id=source_gallery_lora_id,
         )
         session.add(entity)
 

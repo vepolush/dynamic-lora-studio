@@ -127,49 +127,10 @@ def _apply_settings_from_query() -> None:
         st.rerun()
 
 
-def _handle_session_action_from_query() -> bool:
-    """Handle session_action from query params (fav, arch, del). Returns True if handled."""
-    action = st.query_params.get("session_action")
-    sid = st.query_params.get("session_id")
-    if not action or not sid:
-        return False
-    from services.session_service import delete_session, get_sessions, update_session
-
-    handled = False
-    if action == "fav":
-        sessions = [s for s in st.session_state.get("sessions", []) if s["id"] == sid]
-        if sessions and update_session(sid, favourite=not sessions[0].get("favourite", False)):
-            handled = True
-    elif action == "arch":
-        sessions = [s for s in st.session_state.get("sessions", []) if s["id"] == sid]
-        if sessions and update_session(sid, archived=not sessions[0].get("archived", False)):
-            handled = True
-    elif action == "del":
-        if delete_session(sid):
-            sessions = [s for s in st.session_state.get("sessions", []) if s["id"] != sid]
-            st.session_state["sessions"] = sessions
-            if st.session_state.get("active_session_id") == sid and sessions:
-                st.session_state["active_session_id"] = sessions[0]["id"]
-            elif st.session_state.get("active_session_id") == sid:
-                st.session_state["active_session_id"] = None
-            st.toast("Session deleted")
-            handled = True
-
-    if handled:
-        st.session_state["sessions"] = get_sessions()
-        for key in ("session_action", "session_id"):
-            if key in st.query_params:
-                del st.query_params[key]
-        st.rerun()
-    return handled
-
-
 def render_workspace() -> None:
     from services.auth_service import is_logged_in
 
     _apply_settings_from_query()
-    if _handle_session_action_from_query():
-        return
     st.markdown(f'<div class="stars-layer">{_STARS_HTML}</div>', unsafe_allow_html=True)
 
     if not is_logged_in():
@@ -187,7 +148,7 @@ def render_workspace() -> None:
 
 
 def _render_session_header(session: dict) -> None:
-    from urllib.parse import urlencode
+    from services.session_service import delete_session, get_sessions, update_session
 
     date_str = format_session_date(session["created_at"])
     msg_count = session.get("message_count", 0)
@@ -196,20 +157,31 @@ def _render_session_header(session: dict) -> None:
     is_fav = session.get("favourite", False)
     is_archived = session.get("archived", False)
 
-    def _action_url(action: str) -> str:
-        q = {"session_action": action, "session_id": sid}
-        return "?" + urlencode(q)
-
-    st.markdown(
-        f'<div class="session-header session-header-with-actions">'
-        f'<div class="session-title"><strong>{session["title"]}</strong> · {date_str}{count_label}</div>'
-        f'<div class="session-header-actions">'
-        f'<a href="{_action_url("fav")}" class="session-action-btn" title="Favourite">{"★" if is_fav else "☆"}</a>'
-        f'<a href="{_action_url("arch")}" class="session-action-btn" title="Archive">{"📦" if is_archived else "📁"}</a>'
-        f'<a href="{_action_url("del")}" class="session-action-btn session-action-delete" title="Delete">🗑</a>'
-        f"</div></div>",
-        unsafe_allow_html=True,
-    )
+    col_title, col_fav, col_arch, col_del = st.columns([6, 1, 1, 1])
+    with col_title:
+        st.markdown(
+            f'<div class="session-title"><strong>{session["title"]}</strong> · {date_str}{count_label}</div>',
+            unsafe_allow_html=True,
+        )
+    with col_fav:
+        if st.button("★" if is_fav else "☆", key=f"session_fav_{sid}", help="Favourite"):
+            if update_session(sid, favourite=not is_fav):
+                st.session_state["sessions"] = get_sessions()
+                st.rerun()
+    with col_arch:
+        if st.button("📦" if is_archived else "📁", key=f"session_arch_{sid}", help="Archive"):
+            if update_session(sid, archived=not is_archived):
+                st.session_state["sessions"] = get_sessions()
+                st.rerun()
+    with col_del:
+        if st.button("🗑", key=f"session_del_{sid}", help="Delete"):
+            if delete_session(sid):
+                st.session_state["sessions"] = [s for s in st.session_state.get("sessions", []) if s["id"] != sid]
+                if st.session_state.get("active_session_id") == sid:
+                    sess = st.session_state["sessions"]
+                    st.session_state["active_session_id"] = sess[0]["id"] if sess else None
+                st.toast("Session deleted")
+                st.rerun()
 
 
 def _render_chat_history(session: dict) -> None:
@@ -313,10 +285,11 @@ def _render_message(msg: dict, session_id: str) -> None:
     if specs_line:
         meta += f" · {specs_line}"
 
+    model_name = "Stable Diffusion 1.5"
     st.markdown(
         f'<div class="chat-msg bot-msg">'
         f'<div class="msg-header">'
-        f'<span class="msg-author">✦ Studio <span class="bot-badge">BOT</span></span>'
+        f'<span class="msg-author">✦ {model_name}</span>'
         f'<span class="msg-time">{meta}</span>'
         f"</div>"
         f"</div>",
@@ -372,15 +345,16 @@ def _render_message_images(
             seed = img_data.get("seed", "?")
             if img_src:
                 key_safe = "".join(c if c.isalnum() else "_" for c in f"{session_id}_{filename or i}")
-                st.markdown('<div class="like-on-image">', unsafe_allow_html=True)
-                st.image(
-                    img_src,
-                    width=max_img_width,
-                    caption=f"seed: {seed}",
-                )
-                if filename:
-                    btn_col1, btn_col2 = st.columns(2, gap="small")
-                    with btn_col1:
+                is_published = filename in published_filenames
+                img_col, btn_col = st.columns([3, 1], gap="small")
+                with img_col:
+                    st.image(
+                        img_src,
+                        width=max_img_width,
+                        caption=f"seed: {seed}",
+                    )
+                with btn_col:
+                    if filename:
                         is_fav = filename in fav_filenames
                         if st.button("♥" if is_fav else "♡", key=f"fav_img_{key_safe}", help="Toggle favourite"):
                             new_fav = list(fav_filenames)
@@ -390,24 +364,22 @@ def _render_message_images(
                                 new_fav.append(filename)
                             if update_session(session_id, favourite_image_filenames=new_fav):
                                 st.rerun()
-                    with btn_col2:
-                        is_published = filename in published_filenames
-                        if not is_published and st.button("Publish", key=f"pub_img_{key_safe}", help="Publish to gallery"):
-                            if is_logged_in():
-                                result, err = publish_to_gallery(
-                                    session_id,
-                                    filename,
-                                    prompt=prompt,
-                                    settings=settings or {},
-                                )
-                                if result:
-                                    st.toast("Published to gallery!")
-                                    st.rerun()
+                        if not is_published:
+                            if st.button("📤", key=f"pub_img_{key_safe}", help="Publish to gallery"):
+                                if is_logged_in():
+                                    result, err = publish_to_gallery(
+                                        session_id,
+                                        filename,
+                                        prompt=prompt,
+                                        settings=settings or {},
+                                    )
+                                    if result:
+                                        st.toast("Published to gallery!")
+                                        st.rerun()
+                                    else:
+                                        st.error(err or "Failed to publish")
                                 else:
-                                    st.error(err or "Failed to publish")
-                            else:
-                                st.warning("Log in to publish")
-                st.markdown("</div>", unsafe_allow_html=True)
+                                    st.warning("Log in to publish")
             else:
                 st.markdown(
                     '<div class="image-card"><div class="placeholder-orb"></div></div>',

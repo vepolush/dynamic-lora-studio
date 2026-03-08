@@ -7,7 +7,7 @@ import random
 import streamlit as st
 
 from services.session_service import get_session, get_session_image_base64, update_session
-from state.session import format_session_date, get_favourite_count
+from state.session import format_session_date, get_favourite_images_count
 
 _STARS_HTML = "".join(
     f'<div class="star" style="left:{random.randint(0,100)}%;top:{random.randint(0,100)}%;--dur:{random.uniform(2,6):.1f}s"></div>'
@@ -34,7 +34,7 @@ def render_my_images() -> None:
             st.session_state["images_filter"] = "all"
             st.rerun()
     with col_fav:
-        if st.button(f"Favourite ({get_favourite_count()})", key="filter_fav", use_container_width=True):
+        if st.button(f"Favourite ({get_favourite_images_count()})", key="filter_fav", use_container_width=True):
             st.session_state["images_filter"] = "favourite"
             st.rerun()
     with col_arch:

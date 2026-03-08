@@ -16,6 +16,7 @@ from entity_store import (
     entity_preview_path,
     entity_weights_dir,
     get_entity,
+    user_has_entity_from_gallery_lora,
 )
 
 DATA_DIR = Path(__import__("os").environ.get("DATA_DIR", "/workspace/data"))
@@ -58,6 +59,8 @@ def publish_lora(
     entity = get_entity(entity_id, user_id=user_id)
     if not entity:
         raise FileNotFoundError(f"Entity not found: {entity_id}")
+    if entity.get("source_gallery_lora_id"):
+        raise ValueError("Cannot publish an entity that was added from the gallery")
     if entity.get("status") != "ready":
         raise ValueError("Entity must be ready (trained) to publish")
     versions = entity.get("versions", [])
@@ -103,6 +106,7 @@ def _lora_to_dict(
     published_at: str,
     author_email: str | None = None,
     is_mine: bool = False,
+    already_added: bool = False,
 ) -> dict[str, Any]:
     return {
         "id": lora_id,
@@ -115,6 +119,7 @@ def _lora_to_dict(
         "published_at": published_at,
         "author_email": author_email or "",
         "is_mine": is_mine,
+        "already_added": already_added,
     }
 
 
@@ -139,6 +144,10 @@ def list_gallery_loras(
         result = []
         for row in rows:
             user = session.get(UserModel, row.user_id)
+            already_added = (
+                user_has_entity_from_gallery_lora(current_user_id, row.id)
+                if current_user_id else False
+            )
             result.append(_lora_to_dict(
                 row.id,
                 row.user_id,
@@ -150,6 +159,7 @@ def list_gallery_loras(
                 row.published_at,
                 author_email=user.username if user else "",
                 is_mine=current_user_id == row.user_id if current_user_id else False,
+                already_added=already_added,
             ))
         return result
 
@@ -165,6 +175,10 @@ def get_gallery_lora(
         if not row:
             return None
         user = session.get(UserModel, row.user_id)
+        already_added = (
+            user_has_entity_from_gallery_lora(current_user_id, row.id)
+            if current_user_id else False
+        )
         return _lora_to_dict(
             row.id,
             row.user_id,
@@ -176,6 +190,7 @@ def get_gallery_lora(
             row.published_at,
             author_email=user.username if user else "",
             is_mine=current_user_id == row.user_id if current_user_id else False,
+            already_added=already_added,
         )
 
 
@@ -188,11 +203,15 @@ def add_gallery_lora(lora_id: str, user_id: str) -> dict[str, Any]:
         if not row:
             raise FileNotFoundError("Gallery LoRA not found")
 
+        if user_has_entity_from_gallery_lora(user_id, lora_id):
+            raise ValueError("You have already added this LoRA to your entities")
+
         new_entity = create_entity_from_weights(
             name=row.name,
             trigger_word=row.trigger_word,
             source_weights_dir=_gallery_lora_dir(lora_id),
             user_id=user_id,
+            source_gallery_lora_id=lora_id,
         )
         row.add_count += 1
 

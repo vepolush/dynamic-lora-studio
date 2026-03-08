@@ -46,6 +46,7 @@ class EntityModel(Base):
     preview_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_zip_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     preview_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    source_gallery_lora_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict matching legacy metadata.json structure."""
@@ -228,7 +229,11 @@ def _run_migrations(engine) -> None:
             conn.commit()
         except Exception:
             conn.rollback()
-            pass
+        try:
+            conn.execute(text("ALTER TABLE entities ADD COLUMN source_gallery_lora_id VARCHAR(64)"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
 
 def init_db() -> None:

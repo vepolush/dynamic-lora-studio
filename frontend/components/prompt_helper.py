@@ -159,7 +159,8 @@ def _render_entities_content() -> None:
         _render_retrain_section(active_entity)
 
         entity_status = str(active_entity.get("status", ""))
-        if entity_status == "ready" and is_logged_in():
+        from_gallery = bool(active_entity.get("source_gallery_lora_id"))
+        if entity_status == "ready" and is_logged_in() and not from_gallery:
             _render_publish_lora_section(active_entity)
 
         if st.button("Delete entity", key="delete_entity_btn", type="secondary"):
@@ -851,9 +852,22 @@ def _render_styling_section() -> None:
 
 def _reset_prompt_helper() -> None:
     from state.session import DEFAULT_SETTINGS
-    st.session_state["generation_settings"] = {**DEFAULT_SETTINGS}
+    ds = DEFAULT_SETTINGS
+    st.session_state["generation_settings"] = {**ds}
     st.session_state["active_entity_id"] = None
     st.session_state["lora_strength"] = 0.8
+    st.session_state["lora_strength_slider"] = 0.8
+    st.session_state["steps_slider"] = ds["steps"]
+    st.session_state["guidance_slider"] = ds["guidance_scale"]
+    st.session_state["size_select"] = ds["image_size"]
+    st.session_state["seed_input"] = ds["seed"]
+    st.session_state["num_images_input"] = ds["num_images"]
+    st.session_state["quality_slider"] = ds["quality"]
+    st.session_state["scheduler_select"] = "Auto"
+    st.session_state["style_select"] = ds["style"]
+    st.session_state["lightning_select"] = ds["lightning"]
+    st.session_state["color_select"] = ds["color"]
+    st.session_state["negative_prompt_input"] = ds["negative_prompt"]
     st.rerun()
 
 

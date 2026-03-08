@@ -1324,6 +1324,12 @@ header[data-testid="stHeader"] {
     margin-top: 1rem;
 }
 
+.gallery-tab-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 0.75rem 0 1rem 0;
+}
+
 .gallery-prompt {
     max-height: 120px;
     overflow-y: auto;

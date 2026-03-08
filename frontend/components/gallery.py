@@ -28,12 +28,22 @@ def render_gallery() -> None:
         unsafe_allow_html=True,
     )
 
-    tab_images, tab_loras = st.tabs(["Images", "LoRAs"])
+    gallery_tab = st.session_state.get("gallery_tab", "images")
+    col_img, col_lor, _ = st.columns([1, 1, 4])
+    with col_img:
+        if st.button("🖼 Images", key="gallery_tab_images", use_container_width=True, type="primary" if gallery_tab == "images" else "secondary"):
+            st.session_state["gallery_tab"] = "images"
+            st.rerun()
+    with col_lor:
+        if st.button("✨ LoRAs", key="gallery_tab_loras", use_container_width=True, type="primary" if gallery_tab == "loras" else "secondary"):
+            st.session_state["gallery_tab"] = "loras"
+            st.rerun()
 
-    with tab_images:
+    st.markdown('<div class="gallery-tab-divider"></div>', unsafe_allow_html=True)
+
+    if gallery_tab == "images":
         _render_images_tab()
-
-    with tab_loras:
+    else:
         _render_loras_tab()
 
 
@@ -106,6 +116,7 @@ def _render_lora_thumb(lora: dict) -> None:
     st.caption(f"**{name}** · `{trigger}`")
     st.caption(f"Added to entities: {add_count}")
 
+    already_added = lora.get("already_added", False)
     col_v, col_a = st.columns(2, gap="small")
     with col_v:
         if st.button("View", key=f"view_lora_{lora_id}", use_container_width=True):
@@ -117,7 +128,7 @@ def _render_lora_thumb(lora: dict) -> None:
                 if unpublish_gallery_lora(lora_id):
                     st.toast("LoRA unpublished")
                     st.rerun()
-        else:
+        elif not already_added:
             if st.button("Add", key=f"add_lora_{lora_id}", use_container_width=True):
                 if is_logged_in():
                     result = add_gallery_lora(lora_id)
@@ -131,6 +142,8 @@ def _render_lora_thumb(lora: dict) -> None:
                         st.rerun()
                 else:
                     st.warning("Log in to add LoRA")
+        else:
+            st.caption("Added")
 
 
 @st.dialog("Gallery LoRA")
@@ -160,7 +173,7 @@ def _show_lora_dialog(lora_id: str) -> None:
         if item.get("description"):
             st.markdown(f"**Description:** {item.get('description', '')}")
 
-        if is_logged_in():
+        if is_logged_in() and not item.get("already_added", False):
             if st.button("Add to my entities", key="gallery_lora_popup_add", type="primary"):
                 result = add_gallery_lora(lora_id)
                 if result:
@@ -171,17 +184,20 @@ def _show_lora_dialog(lora_id: str) -> None:
                         st.session_state["active_entity_id"] = new_entity.get("id")
                     st.toast(f"LoRA added: {item.get('name', '')}")
                     st.rerun()
-            if item.get("is_mine"):
-                st.divider()
-                if st.button("Unpublish", key="gallery_lora_popup_unpublish"):
-                    if unpublish_gallery_lora(lora_id):
-                        st.session_state.pop("gallery_selected_lora_id", None)
-                        st.toast("LoRA unpublished")
-                        st.rerun()
-                    else:
-                        st.error("Failed to unpublish")
-        else:
+        elif item.get("already_added"):
+            st.caption("Already added to your entities")
+        elif not is_logged_in():
             st.caption("Log in to add LoRA")
+
+        if item.get("is_mine"):
+            st.divider()
+            if st.button("Unpublish", key="gallery_lora_popup_unpublish"):
+                if unpublish_gallery_lora(lora_id):
+                    st.session_state.pop("gallery_selected_lora_id", None)
+                    st.toast("LoRA unpublished")
+                    st.rerun()
+                else:
+                    st.error("Failed to unpublish")
 
         if st.button("✕ Close", key="gallery_lora_close_popup"):
             st.session_state.pop("gallery_selected_lora_id", None)

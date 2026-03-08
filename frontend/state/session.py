@@ -181,6 +181,23 @@ def get_favourite_count() -> int:
     return sum(1 for s in sessions if s.get("favourite") is True)
 
 
+def get_favourite_images_count() -> int:
+    """Count favourite images (favourite_image_filenames) across all sessions."""
+    from services.session_service import get_sessions, get_session
+    sessions = get_sessions()
+    total = 0
+    for s in sessions:
+        sess_data = get_session(s["id"])
+        if not sess_data:
+            continue
+        fav = set(sess_data.get("favourite_image_filenames", []))
+        for msg in sess_data.get("messages", []):
+            for img in msg.get("images", []):
+                if img.get("filename") in fav:
+                    total += 1
+    return total
+
+
 def format_session_date(iso_str: str) -> str:
     dt = datetime.fromisoformat(iso_str)
     today = datetime.now().date()
