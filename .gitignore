@@ -212,3 +212,6 @@ docs/
 
 # Test data
 tests/test_data/
+
+# Experiment output
+experiments/output/

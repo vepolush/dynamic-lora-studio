@@ -2,35 +2,105 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import sys
 import time
 from pathlib import Path
 
-# Add project root to path
 ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Add frontend for APIClient
 FRONTEND = ROOT / "frontend"
 if str(FRONTEND) not in sys.path:
     sys.path.insert(0, str(FRONTEND))
 
 import httpx
 
+EXPERIMENTS_DIR = Path(__file__).parent
+PROMPT_LORA_FILE = EXPERIMENTS_DIR / "prompt_lora.txt"
+PROMPT_NO_LORA_FILE = EXPERIMENTS_DIR / "prompt_no_lora.txt"
+# Legacy single-file fallback
+PROMPT_FILE = EXPERIMENTS_DIR / "prompt.txt"
+OUTPUT_DIR = EXPERIMENTS_DIR / "output"
+
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 DEFAULT_TIMEOUT = 120.0
 GEN_TIMEOUT = 180.0
 
+PLACEHOLDER = "{trigger}"
+
+
+def _load_and_replace(path: Path, trigger: str | None) -> str:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing {path}")
+    text = path.read_text(encoding="utf-8").strip()
+    repl = (trigger or "").strip()
+    result = text.replace(PLACEHOLDER, repl)
+    while "  " in result:
+        result = result.replace("  ", " ")
+    return result.strip()
+
+
+def load_prompt_lora(trigger: str) -> str:
+    """Prompt for generation WITH LoRA — shorter, relies on trigger word."""
+    if PROMPT_LORA_FILE.exists():
+        return _load_and_replace(PROMPT_LORA_FILE, trigger)
+    return _load_and_replace(PROMPT_FILE, trigger)
+
+
+def load_prompt_no_lora(trigger: str | None = None) -> str:
+    """Prompt for generation WITHOUT LoRA — detailed description of the subject."""
+    if PROMPT_NO_LORA_FILE.exists():
+        return _load_and_replace(PROMPT_NO_LORA_FILE, trigger)
+    return _load_and_replace(PROMPT_FILE, None)
+
+
+def load_prompt(trigger: str | None = None) -> str:
+    """Legacy: load from prompt.txt (or prompt_lora.txt if trigger given)."""
+    if trigger:
+        return load_prompt_lora(trigger)
+    return load_prompt_no_lora(trigger)
+
+
+def save_images_from_response(
+    response: dict,
+    session_id: str,
+    subdir: str = "",
+) -> list[Path]:
+    """Decode base64 images from generate response, save to output/, return paths."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_sub = OUTPUT_DIR / subdir if subdir else OUTPUT_DIR
+    out_sub.mkdir(parents=True, exist_ok=True)
+
+    paths: list[Path] = []
+    for img in response.get("images", []):
+        b64 = img.get("base64")
+        fname = img.get("filename", "out.png")
+        seed = img.get("seed", "?")
+        if not b64:
+            continue
+        if isinstance(b64, str) and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[-1]
+        try:
+            raw = base64.b64decode(b64)
+        except Exception:
+            continue
+        stem = Path(fname).stem
+        out_name = f"{stem}_seed{seed}.png"
+        out_path = out_sub / out_name
+        out_path.write_bytes(raw)
+        paths.append(out_path)
+        print(f"    -> {out_path}")
+    return paths
+
 
 def get_client(token: str | None = None) -> "ExperimentClient":
-    """Create authenticated API client."""
     return ExperimentClient(BACKEND_URL, token=token)
 
 
 def ensure_auth(client: "ExperimentClient", username: str = "exp_user", password: str = "exp_pass_123") -> str:
-    """Register/login and return token."""
     try:
         client.register(username, password)
     except Exception:
@@ -39,8 +109,13 @@ def ensure_auth(client: "ExperimentClient", username: str = "exp_user", password
     return data["token"]
 
 
-def wait_for_entity_ready(client: "ExperimentClient", entity_id: str, poll_interval: float = 3.0, max_wait: float = 600.0) -> bool:
-    """Poll until entity status is 'ready' or 'failed'. Returns True if ready."""
+def wait_for_entity_ready(
+    client: "ExperimentClient",
+    entity_id: str,
+    poll_interval: float = 3.0,
+    max_wait: float = 600.0,
+) -> tuple[bool, float]:
+    """Poll until entity ready/failed. Returns (success, elapsed_seconds)."""
     start = time.time()
     while time.time() - start < max_wait:
         entities = client.get_entities()
@@ -48,11 +123,11 @@ def wait_for_entity_ready(client: "ExperimentClient", entity_id: str, poll_inter
             if e.get("id") == entity_id:
                 status = e.get("status", "")
                 if status == "ready":
-                    return True
+                    return True, time.time() - start
                 if status == "failed":
-                    return False
+                    return False, time.time() - start
         time.sleep(poll_interval)
-    return False
+    return False, time.time() - start
 
 
 class ExperimentClient:
@@ -133,6 +208,8 @@ class ExperimentClient:
         steps: int = 1200,
         rank: int = 16,
         learning_rate: float = 1e-4,
+        lr_scheduler: str = "polynomial",
+        warmup_ratio: float = 0.06,
         use_custom: bool = True,
     ) -> dict:
         import json as _json
@@ -143,8 +220,8 @@ class ExperimentClient:
             "steps": str(steps),
             "rank": str(rank),
             "learning_rate": str(learning_rate),
-            "lr_scheduler": "polynomial",
-            "warmup_ratio": "0.06",
+            "lr_scheduler": lr_scheduler,
+            "warmup_ratio": str(warmup_ratio),
             "remove_filenames": _json.dumps([]),
         }
         return self._request("POST", f"/api/entities/{entity_id}/retrain", data=data, timeout=300.0)
